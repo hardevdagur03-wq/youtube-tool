@@ -2,7 +2,7 @@
 -r requirements.txt
 
 # Core
-python-dotenv>=1.0.1
+python-dotenv>=1.2.3
 pydantic-settings>=2.0.0
 
 # FastAPI / ASGI
