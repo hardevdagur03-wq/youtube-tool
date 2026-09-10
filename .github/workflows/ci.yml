@@ -56,7 +56,7 @@ jobs:
         run: |
           pytest tests/unit/ -v --cov=. --cov-report=xml --cov-report=term --cov-fail-under=95 -m "unit" --timeout=60
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
