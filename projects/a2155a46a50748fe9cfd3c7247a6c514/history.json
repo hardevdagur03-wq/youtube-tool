@@ -1,0 +1,62 @@
+[
+  {
+    "entry_id": "ev_44109796946c",
+    "timestamp": "2026-07-01T11:52:28.581913+00:00",
+    "action": "project_created",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": "URL: https://youtube.com/watch?v=v1"
+  },
+  {
+    "entry_id": "ev_942e0084d074",
+    "timestamp": "2026-07-01T11:52:28.625118+00:00",
+    "action": "project_paused",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_3edb129cbf7e",
+    "timestamp": "2026-07-01T11:52:28.680442+00:00",
+    "action": "project_resumed",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_5ef19ae49fcb",
+    "timestamp": "2026-07-01T11:52:28.731068+00:00",
+    "action": "project_cancelled",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  }
+]

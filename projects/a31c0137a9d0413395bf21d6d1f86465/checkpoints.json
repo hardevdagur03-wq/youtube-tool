@@ -1,0 +1,93 @@
+[
+  {
+    "checkpoint_id": "cp_119d41b0d540",
+    "stage": "metadata",
+    "created_at": "2026-07-01T11:43:27.945689+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "592f0e76f935f6f2"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_a982060e7192",
+    "stage": "transcript",
+    "created_at": "2026-07-01T11:43:28.095856+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "4cf7f474d4c0b779"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_1cb8abee5b27",
+    "stage": "analysis",
+    "created_at": "2026-07-01T11:43:28.237493+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "4162dda245311c4c"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_320119003dad",
+    "stage": "outline",
+    "created_at": "2026-07-01T11:43:28.382178+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "3b400670f6bbf2b1"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_0010b7006e10",
+    "stage": "blog",
+    "created_at": "2026-07-01T11:43:28.540770+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "c660c01dbc79c9a2"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_b35328363e44",
+    "stage": "review",
+    "created_at": "2026-07-01T11:43:28.677193+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "844b2d19dc5594b8"
+    },
+    "state_snapshot": {}
+  },
+  {
+    "checkpoint_id": "cp_6d4bc65e74fc",
+    "stage": "export",
+    "created_at": "2026-07-01T11:43:28.827704+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "d029293804f65a8b"
+    },
+    "state_snapshot": {}
+  }
+]

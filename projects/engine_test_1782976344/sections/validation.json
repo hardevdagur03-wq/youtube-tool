@@ -1,0 +1,180 @@
+{
+  "intro": {
+    "section_id": "intro",
+    "validated_at": "2026-07-02T07:12:24.943624+00:00",
+    "valid": false,
+    "score": 50.5,
+    "grammar_score": 1.0,
+    "seo_coverage_score": 0.3,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 0.2,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Poor SEO keyword coverage",
+      "Primary keyword missing from section",
+      "Section content does not align with heading",
+      "Word count 65 outside expected range for target 200",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "SEO coverage could be improved",
+      "Keyword usage could be improved"
+    ]
+  },
+  "benefits_01": {
+    "section_id": "benefits_01",
+    "validated_at": "2026-07-02T07:12:24.961912+00:00",
+    "valid": true,
+    "score": 75.0,
+    "grammar_score": 0.95,
+    "seo_coverage_score": 0.63,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 1.0,
+    "word_count_valid": false,
+    "fact_consistency_score": 1.0,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Primary keyword missing from section",
+      "Word count 94 outside expected range for target 300"
+    ],
+    "warnings": [
+      "SEO coverage could be improved",
+      "Keyword usage could be improved"
+    ]
+  },
+  "compare_02": {
+    "section_id": "compare_02",
+    "validated_at": "2026-07-02T07:12:24.988966+00:00",
+    "valid": true,
+    "score": 65.5,
+    "grammar_score": 0.95,
+    "seo_coverage_score": 0.8,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 1.0,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Primary keyword missing from section",
+      "Word count 96 outside expected range for target 400",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "Keyword usage could be improved"
+    ]
+  },
+  "steps_03": {
+    "section_id": "steps_03",
+    "validated_at": "2026-07-02T07:12:25.017119+00:00",
+    "valid": true,
+    "score": 72.5,
+    "grammar_score": 0.95,
+    "seo_coverage_score": 0.47,
+    "keyword_usage_score": 1.0,
+    "heading_alignment_score": 1.0,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 0.7,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Poor SEO keyword coverage",
+      "Word count 95 outside expected range for target 350",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "SEO coverage could be improved"
+    ]
+  },
+  "faq_999": {
+    "section_id": "faq_999",
+    "validated_at": "2026-07-02T07:12:25.048462+00:00",
+    "valid": false,
+    "score": 50.5,
+    "grammar_score": 1.0,
+    "seo_coverage_score": 0.3,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 0.2,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Poor SEO keyword coverage",
+      "Primary keyword missing from section",
+      "Section content does not align with heading",
+      "Word count 65 outside expected range for target 300",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "SEO coverage could be improved",
+      "Keyword usage could be improved"
+    ]
+  },
+  "conclusion_999": {
+    "section_id": "conclusion_999",
+    "validated_at": "2026-07-02T07:12:25.073466+00:00",
+    "valid": false,
+    "score": 58.5,
+    "grammar_score": 1.0,
+    "seo_coverage_score": 0.3,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 1.0,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.9,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Poor SEO keyword coverage",
+      "Primary keyword missing from section",
+      "Word count 48 outside expected range for target 150",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "SEO coverage could be improved",
+      "Keyword usage could be improved"
+    ]
+  },
+  "cta_999": {
+    "section_id": "cta_999",
+    "validated_at": "2026-07-02T07:12:25.104434+00:00",
+    "valid": false,
+    "score": 54.5,
+    "grammar_score": 1.0,
+    "seo_coverage_score": 0.3,
+    "keyword_usage_score": 0.0,
+    "heading_alignment_score": 0.7,
+    "word_count_valid": false,
+    "fact_consistency_score": 0.2,
+    "outline_compliance_score": 1.0,
+    "duplicate_content_score": 1.0,
+    "readability_score": 0.7,
+    "hallucination_risk_score": 1.0,
+    "issues": [
+      "Poor SEO keyword coverage",
+      "Primary keyword missing from section",
+      "Word count 22 outside expected range for target 100",
+      "Low fact consistency with knowledge graph"
+    ],
+    "warnings": [
+      "SEO coverage could be improved",
+      "Keyword usage could be improved"
+    ]
+  }
+}

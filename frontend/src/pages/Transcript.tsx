@@ -1,0 +1,881 @@
+import { motion } from 'framer-motion';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  Youtube, Loader2, ChevronDown, ChevronRight,
+  Users, Hash, XCircle, Download, RotateCcw,
+  CheckCircle2, AlertCircle, ExternalLink, StopCircle, RefreshCw,
+  Copy, Check,
+} from 'lucide-react';
+import { Container, Badge, Card } from '../components/ui';
+import VideoUrlInput from '../components/blog/VideoUrlInput';
+import { transcriptService } from '../services/TranscriptService';
+import type {
+  ChannelVideoTranscriptSimple,
+  TranscriptJobProgressData,
+  TranscriptSimpleResponse,
+} from '../types';
+
+function cleanHandle(input: string): string {
+  let h = input.trim();
+  if (h.includes('youtube.com/channel/')) h = h.split('/channel/')[1]?.split('/')[0] || h;
+  if (h.includes('youtube.com/@')) h = h.split('/@')[1]?.split('/')[0] || h;
+  if (h.startsWith('@')) h = h.slice(1);
+  return h;
+}
+
+export default function Transcript() {
+  const [validatedVideoId, setValidatedVideoId] = useState<string | null>(null);
+  const [processingVideoId, setProcessingVideoId] = useState<string | null>(null);
+  const [videoResult, setVideoResult] = useState<TranscriptSimpleResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [maxVideos, setMaxVideos] = useState(100);
+  const [channelVideos, setChannelVideos] = useState<ChannelVideoTranscriptSimple[] | null>(null);
+  const [channelLoading, setChannelLoading] = useState(false);
+  const [channelError, setChannelError] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<TranscriptJobProgressData | null>(null);
+  const [useBackgroundMode, setUseBackgroundMode] = useState(true);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const channelInputRef = useRef<HTMLInputElement>(null);
+
+  const [csvExporting, setCsvExporting] = useState(false);
+  const [csvExportStatus, setCsvExportStatus] = useState<string | null>(null);
+
+  const handleValidUrl = (videoId: string, _normalizedUrl: string) => {
+    setValidatedVideoId(videoId);
+  };
+
+  const fetchSingleTranscript = useCallback(async (videoId: string) => {
+    console.log('[Transcript] Starting single video transcript fetch:', videoId);
+    setProcessingVideoId(videoId);
+    setChannelVideos(null);
+    setActiveJob(null);
+    setVideoResult(null);
+    setError(null);
+    setLoading(true);
+
+    try {
+      console.log(`[Transcript] Calling /api/transcriptv2/${videoId}...`);
+      const data = await transcriptService.fetchTranscriptSimple(videoId);
+      console.log('[Transcript] Received transcript data:', data);
+      setVideoResult(data);
+    } catch (err) {
+      console.error('[Transcript] Failed to fetch transcript:', err);
+      if (err instanceof TypeError) {
+        setError('Backend unavailable. Ensure the API server is running on port 8000.');
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleSingleVideoSubmit = useCallback((videoId: string) => {
+    console.log('[Transcript] handleSingleVideoSubmit triggered with videoId:', videoId);
+    fetchSingleTranscript(videoId);
+  }, [fetchSingleTranscript]);
+
+  const handleRetry = () => {
+    const vid = processingVideoId || validatedVideoId;
+    if (vid) {
+      fetchSingleTranscript(vid);
+    }
+  };
+
+  const handleCopyTranscript = async () => {
+    if (!videoResult?.transcript) return;
+    try {
+      await navigator.clipboard.writeText(videoResult.transcript);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy transcript:', err);
+    }
+  };
+
+  // Background Job polling
+  useEffect(() => {
+    if (!activeJob || activeJob.status === 'completed' || activeJob.status === 'cancelled' || activeJob.status === 'failed') {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const updated = await transcriptService.getJobProgress(activeJob.job_id);
+        setActiveJob(updated);
+        if (updated.videos && updated.videos.length > 0) {
+          setChannelVideos(updated.videos);
+        }
+        if (updated.status === 'completed' || updated.status === 'cancelled' || updated.status === 'failed') {
+          setChannelLoading(false);
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error('Job polling error:', err);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [activeJob]);
+
+  const handleChannelSubmit = useCallback(async (handleOverride?: string) => {
+    const input = handleOverride || channelInputRef.current?.value || '';
+    if (!input.trim()) return;
+    const handle = cleanHandle(input);
+    setChannelLoading(true);
+    setChannelError(null);
+    setChannelVideos(null);
+    setActiveJob(null);
+    setValidatedVideoId(null);
+    setVideoResult(null);
+
+    try {
+      if (useBackgroundMode) {
+        const job = await transcriptService.startTranscriptJob(handle, maxVideos);
+        setActiveJob(job);
+        if (job.videos) {
+          setChannelVideos(job.videos);
+        }
+      } else {
+        const videos = await transcriptService.fetchChannelTranscriptsSimple(handle, maxVideos);
+        setChannelVideos(videos);
+        setChannelLoading(false);
+      }
+    } catch (err) {
+      setChannelLoading(false);
+      if (err instanceof TypeError) {
+        setChannelError('Backend unavailable. Ensure the API server is running on port 8000.');
+      } else {
+        setChannelError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }, [maxVideos, useBackgroundMode]);
+
+  const handleCancelJob = async () => {
+    if (!activeJob) return;
+    try {
+      await transcriptService.cancelJob(activeJob.job_id);
+      setActiveJob(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      setChannelLoading(false);
+    } catch (err) {
+      console.error('Cancel job error:', err);
+    }
+  };
+
+  const handleCsvExport = useCallback(async (channelHandle?: string) => {
+    setCsvExporting(true);
+    setCsvExportStatus(null);
+    try {
+      // If we have an active job, download directly from job download endpoint
+      if (activeJob) {
+        const dlUrl = transcriptService.getJobDownloadUrl(activeJob.job_id);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = `${cleanHandle(activeJob.channel_handle)}_transcripts.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setCsvExportStatus('Download started');
+        setTimeout(() => setCsvExportStatus(null), 3000);
+        return;
+      }
+
+      const body: Record<string, unknown> = { format: 'csv' };
+      if (channelHandle) {
+        body.channel_handle = channelHandle;
+        body.max_videos = maxVideos;
+      } else if (processingVideoId || validatedVideoId) {
+        const vid = processingVideoId || validatedVideoId;
+        body.video_url = `https://youtube.com/watch?v=${vid}`;
+      }
+      const resp = await fetch('/api/transcript/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const bodyData = await resp.json().catch(() => null);
+        throw new Error(bodyData?.message || `Server returned ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      const filename = (resp.headers.get('Content-Disposition') || 'transcripts.csv')
+        .split('filename=')[1]
+        ?.replace(/"/g, '') || 'transcripts.csv';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setCsvExportStatus('Download started');
+      setTimeout(() => setCsvExportStatus(null), 3000);
+    } catch (err) {
+      setCsvExportStatus(err instanceof Error ? err.message : 'Export failed');
+      setTimeout(() => setCsvExportStatus(null), 5000);
+    } finally {
+      setCsvExporting(false);
+    }
+  }, [processingVideoId, validatedVideoId, activeJob, maxVideos]);
+
+  // Statistics calculation
+  const totalEligible = channelVideos?.length || 0;
+  const captionCount = channelVideos?.filter(v => v.method === 'caption').length || 0;
+  const whisperCount = channelVideos?.filter(v => v.method === 'speech_to_text').length || 0;
+  const successCount = captionCount + whisperCount;
+  const noCaptionsCount = channelVideos?.filter(v => !v.transcript && (v.error_code === 'NO_CAPTIONS' || v.error_code === 'CAPTIONS_DISABLED')).length || 0;
+  const failedCount = totalEligible - successCount - noCaptionsCount;
+
+  return (
+    <>
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 dark:from-emerald-800 dark:via-emerald-700 dark:to-teal-900">
+        <div className="absolute inset-0">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(255,255,255,0.12),transparent_60%)]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-white/5 rounded-full blur-3xl" />
+        </div>
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 lg:pt-32 pb-12 lg:pb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="max-w-2xl"
+          >
+            <Badge variant="info">Transcript Extraction & STT</Badge>
+            <h1 className="text-[36px] sm:text-[44px] lg:text-[52px] font-extrabold leading-[1.08] tracking-[-0.03em] text-white mt-4 mb-3">
+              Video or Channel — Transcript Pipeline
+            </h1>
+            <p className="text-[17px] leading-relaxed text-white/75 max-w-lg">
+              Extract official closed captions or transcribe speech using GPU-accelerated Whisper
+              with exact duration filtering (3:00 – 30:00).
+            </p>
+          </motion.div>
+        </div>
+      </section>
+
+      <section className="relative z-10 -mt-6 pb-20">
+        <Container>
+          <div className="max-w-4xl mx-auto">
+            {/* --- INPUT SECTION --- */}
+            <div className={videoResult || channelVideos || validatedVideoId ? 'mb-8' : ''}>
+              <Card padding="lg" className="mb-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                    <Youtube size={18} className="text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                      Single Video Transcript
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Enter a YouTube video URL to extract captions or run speech-to-text
+                    </p>
+                  </div>
+                </div>
+                <VideoUrlInput
+                  onValidUrl={handleValidUrl}
+                  onChannelDetected={handleChannelSubmit}
+                  onSubmit={handleSingleVideoSubmit}
+                  isProcessing={loading}
+                />
+              </Card>
+
+              <div className="relative mb-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200 dark:border-gray-700" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white dark:bg-gray-900 px-3 text-gray-400 dark:text-gray-500 font-medium">
+                    or
+                  </span>
+                </div>
+              </div>
+
+              <Card padding="lg">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center flex-shrink-0">
+                    <Users size={18} className="text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                      Channel Transcripts Pipeline
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Enter a channel handle (@handle) to process eligible videos (3–30 min)
+                    </p>
+                  </div>
+                </div>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (channelInputRef.current?.value) {
+                      handleChannelSubmit();
+                    }
+                  }}
+                >
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Channel Handle or URL
+                    </label>
+                    <div className="relative">
+                      <Users size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        ref={channelInputRef}
+                        type="text"
+                        placeholder="@physicsgalaxyworld or UC... or channel URL"
+                        defaultValue=""
+                        className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm transition-all-200 outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/30"
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        Max Videos to Discover
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={maxVideos}
+                          onChange={(e) => setMaxVideos(Math.max(1, Math.min(1000, parseInt(e.target.value) || 100)))}
+                          min={1}
+                          max={1000}
+                          placeholder="Enter number of videos (1–1000)"
+                          className="w-full px-4 py-2.5 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm transition-all-200 outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/30"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">1–1000</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center pt-6">
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={useBackgroundMode}
+                          onChange={(e) => setUseBackgroundMode(e.target.checked)}
+                          className="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 border-gray-300 dark:border-gray-600"
+                        />
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Background Job (Live Progress)
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={channelLoading}
+                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 text-white font-semibold text-sm shadow-lg shadow-violet-200 dark:shadow-violet-900/30 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    {channelLoading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Hash size={16} />
+                    )}
+                    {channelLoading ? 'Processing Pipeline...' : 'Start Channel Extraction'}
+                  </button>
+                </form>
+              </Card>
+            </div>
+
+            {/* --- SINGLE VIDEO LOADING --- */}
+            {loading && (
+              <Card padding="lg" className="mb-6 border-violet-200 dark:border-violet-900/60 bg-violet-50/20 dark:bg-violet-950/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0">
+                    <Loader2 size={18} className="animate-spin text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Processing Transcript
+                    </h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Checking captions first, then running GPU Whisper STT with English (India) conversion...
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* --- SINGLE VIDEO ERROR --- */}
+            {error && !loading && (
+              <Card padding="lg" className="mb-6 border-rose-200 dark:border-rose-900/40 bg-rose-50/20 dark:bg-rose-950/10">
+                <div className="flex items-start gap-3">
+                  <XCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                      Request Failed
+                    </span>
+                    <p className="text-sm text-gray-800 dark:text-gray-200 mt-0.5">
+                      {error}
+                    </p>
+                    <button
+                      onClick={handleRetry}
+                      className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition-all-200 cursor-pointer"
+                    >
+                      <RotateCcw size={12} /> Retry
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* --- CHANNEL ERROR --- */}
+            {channelError && !channelLoading && (
+              <Card padding="lg" className="mb-6">
+                <div className="flex items-start gap-3">
+                  <XCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <Badge variant="error">{channelError}</Badge>
+                    <button
+                      onClick={() => { setChannelError(null); handleChannelSubmit(); }}
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
+                    >
+                      <RotateCcw size={12} /> Retry
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* --- ACTIVE BACKGROUND JOB PROGRESS CARD --- */}
+            {activeJob && (
+              <Card padding="lg" className="mb-6 border-violet-200 dark:border-violet-900/60 shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+                      Live Job Progress
+                    </span>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      {activeJob.channel_title} (@{activeJob.channel_handle})
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {activeJob.status === 'running' && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 border border-violet-300 dark:border-violet-800">
+                        <Loader2 size={12} className="animate-spin" /> Running
+                      </span>
+                    )}
+                    {activeJob.status === 'completed' && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        <CheckCircle2 size={12} /> Completed
+                      </span>
+                    )}
+                    {activeJob.status === 'cancelled' && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                        <StopCircle size={12} /> Cancelled
+                      </span>
+                    )}
+                    {activeJob.status === 'running' && (
+                      <button
+                        onClick={handleCancelJob}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    <span>Processed {activeJob.processed} of {activeJob.eligible_videos} eligible videos</span>
+                    <span className="font-bold text-gray-900 dark:text-white">{activeJob.progress_percent}%</span>
+                  </div>
+                  <div className="w-full bg-gray-100 dark:bg-gray-800 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-violet-600 to-emerald-500 h-full transition-all duration-300"
+                      style={{ width: `${activeJob.progress_percent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Metric counters */}
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+                  <div className="bg-gray-50 dark:bg-gray-800/60 p-2 rounded-lg">
+                    <p className="text-gray-400 text-[10px] uppercase">Eligible</p>
+                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{activeJob.eligible_videos}</p>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                    <p className="text-emerald-600 dark:text-emerald-400 text-[10px] uppercase">Captions</p>
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">{activeJob.caption_count}</p>
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-950/40 p-2 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <p className="text-blue-600 dark:text-blue-400 text-[10px] uppercase">Whisper</p>
+                    <p className="text-sm font-bold text-blue-700 dark:text-blue-300">{activeJob.whisper_count}</p>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-200 dark:border-amber-800">
+                    <p className="text-amber-600 dark:text-amber-400 text-[10px] uppercase">No Captions</p>
+                    <p className="text-sm font-bold text-amber-700 dark:text-amber-300">{activeJob.no_captions}</p>
+                  </div>
+                  <div className="bg-rose-50 dark:bg-rose-950/40 p-2 rounded-lg border border-rose-200 dark:border-rose-800">
+                    <p className="text-rose-600 dark:text-rose-400 text-[10px] uppercase">Failed</p>
+                    <p className="text-sm font-bold text-rose-700 dark:text-rose-300">{activeJob.failed}</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800/60 p-2 rounded-lg">
+                    <p className="text-gray-400 text-[10px] uppercase">Remaining</p>
+                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{activeJob.remaining}</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* --- SINGLE VIDEO RESULT --- */}
+            {videoResult && !channelVideos && (
+              <div className="mb-6 space-y-4">
+                {videoResult.status === 'failed' ? (
+                  <Card padding="lg" className="border-rose-200 dark:border-rose-900/40 bg-rose-50/30 dark:bg-rose-950/10">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center flex-shrink-0">
+                        <AlertCircle size={20} className="text-rose-600 dark:text-rose-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                            {videoResult.title || 'Transcript Unavailable'}
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                            {videoResult.error_code || 'FAILED'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                          {videoResult.error_message || 'Could not extract transcript for this video.'}
+                        </p>
+                        <div className="mt-4 flex items-center gap-4 text-xs">
+                          {videoResult.video_url && (
+                            <a
+                              href={videoResult.video_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-semibold text-violet-600 dark:text-violet-400 hover:underline"
+                            >
+                              Open on YouTube <ExternalLink size={12} />
+                            </a>
+                          )}
+                          <button
+                            onClick={handleRetry}
+                            className="inline-flex items-center gap-1 font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+                          >
+                            <RotateCcw size={12} /> Retry
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                ) : (
+                  <Card padding="lg">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+                      <div>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
+                          Video Title
+                        </p>
+                        <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mt-1">
+                          {videoResult.title || 'Untitled Video'}
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        {videoResult.method === 'caption' && (
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                            Captions Available
+                          </span>
+                        )}
+                        {videoResult.method === 'speech_to_text' && (
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                            Whisper (STT)
+                          </span>
+                        )}
+                        {videoResult.source && (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                            Source: {videoResult.source}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-y-2 gap-x-5 mb-5 text-xs text-gray-600 dark:text-gray-400 border-y border-gray-100 dark:border-gray-800 py-3">
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Duration: </span>
+                        {videoResult.duration}
+                      </div>
+                      {videoResult.language && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">Language: </span>
+                          {videoResult.language.toLowerCase().includes('english') ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                              English (India)
+                            </span>
+                          ) : videoResult.language.toLowerCase() === 'hinglish' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              Hinglish (Roman)
+                            </span>
+                          ) : (
+                            <span className="font-medium text-gray-900 dark:text-white uppercase">{videoResult.language}</span>
+                          )}
+                        </div>
+                      )}
+                      {videoResult.script && (
+                        <div>
+                          <span className="font-semibold text-gray-700 dark:text-gray-300">Script: </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            {videoResult.script}
+                          </span>
+                        </div>
+                      )}
+                      {videoResult.video_url && (
+                        <a
+                          href={videoResult.video_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline font-medium ml-auto"
+                        >
+                          Watch on YouTube <ExternalLink size={12} />
+                        </a>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
+                          Transcript Text
+                        </p>
+                        <button
+                          onClick={handleCopyTranscript}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all-200 cursor-pointer"
+                        >
+                          {copied ? (
+                            <>
+                              <Check size={12} className="text-emerald-500" />
+                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} />
+                              Copy Transcript
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-800">
+                        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed font-sans">
+                          {videoResult.transcript}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {/* Single Video CSV Export */}
+                {(processingVideoId || validatedVideoId) && (
+                  <Card padding="lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                          Download 15-Column CSV
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Complete row with metadata, status, language, and transcript
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleCsvExport()}
+                        disabled={csvExporting}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold text-sm hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all-200 disabled:opacity-50 cursor-pointer"
+                      >
+                        {csvExporting ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Download size={14} />
+                        )}
+                        {csvExporting ? 'Generating...' : 'Download CSV'}
+                      </button>
+                    </div>
+                    {csvExportStatus && (
+                      <p className={`mt-2 text-xs ${csvExportStatus === 'Download started' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                        {csvExportStatus}
+                      </p>
+                    )}
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* --- CHANNEL RESULTS --- */}
+            {channelVideos && (
+              <div className="space-y-4 mb-6">
+                {/* CSV Export Card with accurate counters */}
+                <Card padding="lg">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        Export All Transcripts (15-Column CSV)
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Download CSV for <span className="font-semibold text-gray-900 dark:text-white">{totalEligible}</span> eligible videos{' '}
+                        (<span className="text-emerald-600 dark:text-emerald-400 font-medium">{successCount} available</span>
+                        {noCaptionsCount > 0 && <span className="text-amber-600 dark:text-amber-400">, {noCaptionsCount} without captions</span>}
+                        {failedCount > 0 && <span className="text-rose-600 dark:text-rose-400">, {failedCount} errors</span>})
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleCsvExport(channelInputRef.current?.value ? cleanHandle(channelInputRef.current.value) : undefined)}
+                      disabled={csvExporting}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-semibold text-sm shadow-lg shadow-emerald-200 dark:shadow-emerald-900/30 hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition-all-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
+                      {csvExporting ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Download size={15} />
+                      )}
+                      {csvExporting ? 'Generating...' : `Download CSV (${totalEligible} Videos)`}
+                    </button>
+                  </div>
+                  {csvExportStatus && (
+                    <p className={`mt-3 text-xs ${csvExportStatus === 'Download started' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                      {csvExportStatus}
+                    </p>
+                  )}
+                </Card>
+
+                {/* Video List */}
+                {channelVideos.length === 0 && (
+                  <Card padding="lg">
+                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+                      No eligible videos (3–30 min) found for this channel.
+                    </p>
+                  </Card>
+                )}
+
+                {channelVideos.map((video, idx) => (
+                  <div key={idx} className="rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                    <button
+                      onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-all-200"
+                    >
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {video.title || `Video ${idx + 1}`}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                          Duration: {video.duration}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {video.method === 'caption' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                            Captions
+                          </span>
+                        )}
+                        {video.method === 'speech_to_text' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+                            Whisper (STT)
+                          </span>
+                        )}
+                        {(!video.transcript && (video.error_code === 'NO_CAPTIONS' || video.error_code === 'CAPTIONS_DISABLED')) && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                            No Captions
+                          </span>
+                        )}
+                        {(!video.transcript && video.error_code === 'RATE_LIMITED') && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-300 dark:border-orange-800">
+                            Rate Limited
+                          </span>
+                        )}
+                        {video.status === 'processing' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                            <Loader2 size={10} className="animate-spin" /> Processing
+                          </span>
+                        )}
+                        {video.status === 'pending' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            Pending
+                          </span>
+                        )}
+                        {(!video.transcript && video.error_code && video.error_code !== 'NO_CAPTIONS' && video.error_code !== 'CAPTIONS_DISABLED' && video.error_code !== 'RATE_LIMITED') && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                            Failed: {video.error_code}
+                          </span>
+                        )}
+                      </div>
+                      {expandedIdx === idx ? (
+                        <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+                      )}
+                    </button>
+
+                    {expandedIdx === idx && (
+                      <div className="border-t border-gray-100 dark:border-gray-700 p-4">
+                        {video.transcript ? (
+                          <>
+                            <div className="flex items-center gap-4 mb-3 text-xs text-gray-500 dark:text-gray-400">
+                              <span>Method: <strong className="text-gray-700 dark:text-gray-300">{video.method}</strong></span>
+                              <span>Source: <strong className="text-gray-700 dark:text-gray-300">{video.source}</strong></span>
+                              {video.language && (
+                                <span>Language: {' '}
+                                  {video.language.toLowerCase().includes('english') ? (
+                                    <strong className="text-blue-600 dark:text-blue-400">English (India)</strong>
+                                  ) : video.language.toLowerCase() === 'hinglish' ? (
+                                    <strong className="text-purple-600 dark:text-purple-400">Hinglish (Roman)</strong>
+                                  ) : (
+                                    <strong className="text-gray-700 dark:text-gray-300">{video.language.toUpperCase()}</strong>
+                                  )}
+                                </span>
+                              )}
+                              {video.video_url && (
+                                <a
+                                  href={video.video_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline ml-auto"
+                                >
+                                  Watch on YouTube <ExternalLink size={12} />
+                                </a>
+                              )}
+                            </div>
+                            <div className="max-h-80 overflow-y-auto bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                                {video.transcript}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="bg-gray-50 dark:bg-gray-800/40 rounded-xl p-4 text-center">
+                            <AlertCircle size={20} className="text-amber-500 mx-auto mb-2" />
+                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                              {video.error_message || 'Closed captions are not available on YouTube for this video.'}
+                            </p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                              Reason Code: <code className="text-violet-600 dark:text-violet-400">{video.error_code || 'NO_CAPTIONS'}</code>
+                            </p>
+                            {video.video_url && (
+                              <div className="mt-3">
+                                <a
+                                  href={video.video_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline"
+                                >
+                                  Open Video on YouTube <ExternalLink size={12} />
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Container>
+      </section>
+    </>
+  );
+}

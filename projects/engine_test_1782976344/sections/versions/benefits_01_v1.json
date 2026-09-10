@@ -1,0 +1,11 @@
+{
+  "version_number": 1,
+  "created_at": "2026-07-02T07:12:24.983938+00:00",
+  "content_hash": "4e6cabe6ae4174ba",
+  "content": "This is a mock-generated benefits section.\n\nThe section covers: Why Python for Web Development?.\n\nHere is the content for this section. It covers the key points\nmentioned in the outline and includes relevant information from\nthe knowledge graph. The content is SEO-optimized and naturally\nincorporates target keywords.\n\nKey points covered in this section:\n- First important point about the topic\n- Second important point with supporting details\n- Third point that builds on previous information\n\nThis section provides value to the reader by addressing their\nspecific needs and questions about the topic at hand.",
+  "prompt": "",
+  "validation_score": 0.0,
+  "generation_time_ms": 0.0,
+  "tokens_used": 381,
+  "reason": "generated_benefits"
+}

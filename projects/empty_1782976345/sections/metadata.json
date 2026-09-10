@@ -1,0 +1,46 @@
+{
+  "project_id": "empty_1782976345",
+  "total_sections": 2,
+  "completed_sections": 2,
+  "failed_sections": 0,
+  "pending_sections": 0,
+  "overall_progress_pct": 100.0,
+  "sections": {
+    "intro": {
+      "section_id": "intro",
+      "section_type": "introduction",
+      "heading": "Introduction",
+      "order": 0,
+      "word_count": 65,
+      "reading_time_seconds": 5,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 74.5,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.783232+00:00",
+      "updated_at": "2026-07-02T07:12:25.783232+00:00"
+    },
+    "conclusion_999": {
+      "section_id": "conclusion_999",
+      "section_type": "conclusion",
+      "heading": "Conclusion",
+      "order": 999,
+      "word_count": 48,
+      "reading_time_seconds": 4,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 82.5,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.818217+00:00",
+      "updated_at": "2026-07-02T07:12:25.819898+00:00"
+    }
+  },
+  "created_at": "2026-07-02T07:12:25.757560+00:00",
+  "updated_at": "2026-07-02T07:12:25.822429+00:00"
+}

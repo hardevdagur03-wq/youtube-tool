@@ -1,0 +1,11 @@
+{
+  "version_number": 1,
+  "created_at": "2026-07-02T07:12:25.039167+00:00",
+  "content_hash": "f6df158cec5d320f",
+  "content": "This is a mock-generated step_by_step section.\n\nThe section covers: Getting Started with Python Web Development.\n\nHere is the content for this section. It covers the key points\nmentioned in the outline and includes relevant information from\nthe knowledge graph. The content is SEO-optimized and naturally\nincorporates target keywords.\n\nKey points covered in this section:\n- First important point about the topic\n- Second important point with supporting details\n- Third point that builds on previous information\n\nThis section provides value to the reader by addressing their\nspecific needs and questions about the topic at hand.",
+  "prompt": "",
+  "validation_score": 0.0,
+  "generation_time_ms": 0.0,
+  "tokens_used": 366,
+  "reason": "generated_step_by_step"
+}

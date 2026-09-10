@@ -1,0 +1,47 @@
+[
+  {
+    "entry_id": "ev_565e085bf102",
+    "timestamp": "2026-07-01T11:41:39.651830+00:00",
+    "action": "project_created",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": "URL: https://youtube.com/watch?v=v1"
+  },
+  {
+    "entry_id": "ev_949a0c44422b",
+    "timestamp": "2026-07-01T11:41:39.707731+00:00",
+    "action": "stage_started",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_7b362aa79aee",
+    "timestamp": "2026-07-01T11:41:39.758301+00:00",
+    "action": "stage_completed",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  }
+]

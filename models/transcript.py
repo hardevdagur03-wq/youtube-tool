@@ -1,0 +1,72 @@
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+from pydantic import BaseModel, Field
+
+
+class TranscriptSource(str, Enum):
+    MANUAL = "manual"
+    AUTO = "auto"
+    WHISPER = "whisper"
+
+
+class TranscriptProviderName(str, Enum):
+    YOUTUBE_MANUAL = "youtube_manual"
+    YOUTUBE_AUTO = "youtube_auto"
+    FASTER_WHISPER = "faster_whisper"
+
+
+class TranscriptSegment(BaseModel):
+    start: float = Field(..., description="Start time in seconds")
+    end: float = Field(..., description="End time in seconds")
+    duration: float = Field(..., description="Duration in seconds")
+    text: str = Field(..., description="Segment text")
+
+
+class WhisperProcessingInfo(BaseModel):
+    model_name: str = Field(default="base", description="Whisper model used")
+    transcription_duration_seconds: float | None = Field(default=None)
+    audio_duration_seconds: float | None = Field(default=None)
+    processing_time_seconds: float | None = Field(default=None)
+    language_detected: str | None = Field(default=None)
+    language_confidence: float | None = Field(default=None)
+    word_timestamps: bool = Field(default=False)
+    audio_download_time_seconds: float | None = Field(default=None)
+
+
+class PipelineStep(BaseModel):
+    name: str = Field(..., description="Step name")
+    status: str = Field(..., description="pending | running | ok | error | skipped")
+    detail: str = Field(default="", description="Optional detail message")
+    duration_seconds: float | None = Field(default=None)
+
+
+class TranscriptResult(BaseModel):
+    success: bool = Field(default=True)
+    video_id: str
+    source: TranscriptSource = Field(default=TranscriptSource.MANUAL)
+    provider: TranscriptProviderName = Field(default=TranscriptProviderName.YOUTUBE_MANUAL)
+    language: str = Field(default="en")
+    language_confidence: float | None = Field(default=None)
+    segments: list[TranscriptSegment] = Field(default_factory=list)
+    plain_text: str = Field(default="")
+    raw_transcript: str = Field(default="", description="Original raw transcript before transliteration/normalization")
+    paragraph_text: str = Field(default="")
+    word_count: int = Field(default=0)
+    character_count: int = Field(default=0)
+    estimated_read_time: str = Field(default="")
+    generated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    duration_seconds: float | None = Field(default=None)
+    whisper_info: WhisperProcessingInfo | None = Field(default=None)
+    pipeline_steps: list[PipelineStep] = Field(default_factory=list)
+    available_languages: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of available transcript language metadata",
+    )
+    translation_source: str | None = Field(
+        default=None,
+        description="Original language code if this result was translated",
+    )
+    error: str | None = Field(default=None)
+    error_code: str | None = Field(default=None, description="Machine-readable error code")
+    method: str = Field(default="youtube_transcript", description="Extraction method used")

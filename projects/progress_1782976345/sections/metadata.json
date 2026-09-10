@@ -1,0 +1,149 @@
+{
+  "project_id": "progress_1782976345",
+  "total_sections": 7,
+  "completed_sections": 7,
+  "failed_sections": 0,
+  "pending_sections": 0,
+  "overall_progress_pct": 100.0,
+  "sections": {
+    "intro": {
+      "section_id": "intro",
+      "section_type": "introduction",
+      "heading": "Introduction",
+      "order": 0,
+      "word_count": 65,
+      "reading_time_seconds": 5,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 58.0,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.460913+00:00",
+      "updated_at": "2026-07-02T07:12:25.460913+00:00"
+    },
+    "benefits_01": {
+      "section_id": "benefits_01",
+      "section_type": "benefits",
+      "heading": "Why Python for Web Development?",
+      "order": 1,
+      "word_count": 94,
+      "reading_time_seconds": 7,
+      "keywords_used": [
+        "Python",
+        "web development"
+      ],
+      "entities_used": [
+        "Python"
+      ],
+      "facts_used": [
+        "Python is versatile for web development"
+      ],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 80.1,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.490188+00:00",
+      "updated_at": "2026-07-02T07:12:25.490188+00:00"
+    },
+    "compare_02": {
+      "section_id": "compare_02",
+      "section_type": "comparison",
+      "heading": "Django vs FastAPI: Choosing the Right Framework",
+      "order": 2,
+      "word_count": 96,
+      "reading_time_seconds": 7,
+      "keywords_used": [
+        "Django",
+        "FastAPI",
+        "comparison"
+      ],
+      "entities_used": [
+        "Django",
+        "FastAPI"
+      ],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 76.0,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.520819+00:00",
+      "updated_at": "2026-07-02T07:12:25.520819+00:00"
+    },
+    "steps_03": {
+      "section_id": "steps_03",
+      "section_type": "step_by_step",
+      "heading": "Getting Started with Python Web Development",
+      "order": 3,
+      "word_count": 95,
+      "reading_time_seconds": 7,
+      "keywords_used": [
+        "getting started"
+      ],
+      "entities_used": [
+        "Python"
+      ],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 67.5,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.556524+00:00",
+      "updated_at": "2026-07-02T07:12:25.556524+00:00"
+    },
+    "faq_999": {
+      "section_id": "faq_999",
+      "section_type": "faq",
+      "heading": "Frequently Asked Questions",
+      "order": 999,
+      "word_count": 65,
+      "reading_time_seconds": 5,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 58.0,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.591489+00:00",
+      "updated_at": "2026-07-02T07:12:25.594190+00:00"
+    },
+    "conclusion_999": {
+      "section_id": "conclusion_999",
+      "section_type": "conclusion",
+      "heading": "Conclusion",
+      "order": 999,
+      "word_count": 48,
+      "reading_time_seconds": 4,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 66.0,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.630612+00:00",
+      "updated_at": "2026-07-02T07:12:25.631245+00:00"
+    },
+    "cta_999": {
+      "section_id": "cta_999",
+      "section_type": "cta",
+      "heading": "Next Steps",
+      "order": 999,
+      "word_count": 22,
+      "reading_time_seconds": 2,
+      "keywords_used": [],
+      "entities_used": [],
+      "facts_used": [],
+      "version": 1,
+      "generation_time_ms": 0.0,
+      "validation_score": 62.0,
+      "status": "completed",
+      "created_at": "2026-07-02T07:12:25.659001+00:00",
+      "updated_at": "2026-07-02T07:12:25.659001+00:00"
+    }
+  },
+  "created_at": "2026-07-02T07:12:25.435147+00:00",
+  "updated_at": "2026-07-02T07:12:25.664757+00:00"
+}

@@ -1,0 +1,52 @@
+{
+  "seo_score": 70.0,
+  "seo_grade": "good",
+  "focus_keyword": "test",
+  "keyword_density": 0.1538,
+  "word_count": 150,
+  "reading_time_minutes": 1,
+  "content_score": 77.0,
+  "meta": {
+    "title": "Test Export Article",
+    "title_length": 19,
+    "description": "A comprehensive test article for export validation",
+    "description_length": 50,
+    "slug": "test-export-article",
+    "canonical_url": "https://example.com/test-export-article"
+  },
+  "headings": {
+    "total": 3,
+    "h1_count": 0,
+    "h2_count": 2,
+    "h3_count": 1,
+    "issues": []
+  },
+  "keywords": {
+    "primary": "test",
+    "secondary": [
+      "export",
+      "quality"
+    ],
+    "tags": [
+      "test",
+      "export",
+      "quality"
+    ],
+    "category": "Testing"
+  },
+  "links": {
+    "internal_count": 0,
+    "external_count": 0
+  },
+  "readability": {
+    "word_count": 150,
+    "reading_time_minutes": 1,
+    "sentence_count": 3
+  },
+  "authors": [
+    "AI Writer"
+  ],
+  "schema_types": [
+    "Article"
+  ]
+}

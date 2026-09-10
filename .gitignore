@@ -1,0 +1,36 @@
+# Environment
+.env
+.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Output & Logs
+output/
+logs/
+
+# Test / debug artifacts
+test_api_key.py
+server2_stderr.txt
+server2_stdout.txt
+
+# Webapp runtime
+webapp/runs/
+webapp/server.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

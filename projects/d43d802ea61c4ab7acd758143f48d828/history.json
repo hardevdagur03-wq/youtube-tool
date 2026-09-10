@@ -1,0 +1,64 @@
+[
+  {
+    "entry_id": "ev_afccac7875f9",
+    "timestamp": "2026-07-01T11:52:26.631352+00:00",
+    "action": "project_created",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": "URL: "
+  },
+  {
+    "entry_id": "ev_78582f9d9029",
+    "timestamp": "2026-07-01T11:52:26.676554+00:00",
+    "action": "stage_started",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_f53065c2bd89",
+    "timestamp": "2026-07-01T11:52:26.729590+00:00",
+    "action": "stage_completed",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_491ae91de353",
+    "timestamp": "2026-07-01T11:52:26.785870+00:00",
+    "action": "stage_failed",
+    "stage": "transcript",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [
+      "API error"
+    ],
+    "retry_count": 0,
+    "details": ""
+  }
+]

@@ -1,0 +1,64 @@
+[
+  {
+    "entry_id": "ev_d03626be0c5a",
+    "timestamp": "2026-07-01T11:42:38.227995+00:00",
+    "action": "project_created",
+    "stage": "",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": "URL: "
+  },
+  {
+    "entry_id": "ev_3805743a2c55",
+    "timestamp": "2026-07-01T11:42:38.271709+00:00",
+    "action": "stage_started",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_0a8e113b88e6",
+    "timestamp": "2026-07-01T11:42:38.328010+00:00",
+    "action": "stage_completed",
+    "stage": "metadata",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [],
+    "retry_count": 0,
+    "details": ""
+  },
+  {
+    "entry_id": "ev_7f4b296fac4f",
+    "timestamp": "2026-07-01T11:42:38.381742+00:00",
+    "action": "stage_failed",
+    "stage": "transcript",
+    "previous_state": "",
+    "new_state": "",
+    "duration_seconds": 0.0,
+    "user_action": false,
+    "system_action": true,
+    "warnings": [],
+    "errors": [
+      "API error"
+    ],
+    "retry_count": 0,
+    "details": ""
+  }
+]

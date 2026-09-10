@@ -1,0 +1,112 @@
+{
+  "project_id": "test-proj-001",
+  "version": 1,
+  "created_at": "2026-07-03T09:32:53.881026+00:00",
+  "files": [
+    {
+      "format": "json",
+      "filename": "blog.json",
+      "size_bytes": 2001,
+      "size_display": "2.0 KB",
+      "mime_type": "application/json",
+      "checksum": "da949e4fa0f0462b6e7492191b40de04",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "markdown",
+      "filename": "blog.md",
+      "size_bytes": 866,
+      "size_display": "866 B",
+      "mime_type": "text/markdown",
+      "checksum": "45c048bb90848800074f64d2ddbcf099",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "txt",
+      "filename": "blog.txt",
+      "size_bytes": 1090,
+      "size_display": "1.1 KB",
+      "mime_type": "text/plain",
+      "checksum": "890fa58ae1bb04ccb72d916f17443519",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "html",
+      "filename": "blog.html",
+      "size_bytes": 4454,
+      "size_display": "4.3 KB",
+      "mime_type": "text/html",
+      "checksum": "98a9baefc85e1571193d31d1f6c83d41",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "schema_article.json",
+      "size_bytes": 622,
+      "size_display": "622 B",
+      "mime_type": "application/ld+json",
+      "checksum": "bc5f163df39a4edd15153a9a30a413e9",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "schema_breadcrumblist.json",
+      "size_bytes": 470,
+      "size_display": "470 B",
+      "mime_type": "application/ld+json",
+      "checksum": "04585964afc6d66fda95ff46dacadbb3",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "schema_faqpage.json",
+      "size_bytes": 268,
+      "size_display": "268 B",
+      "mime_type": "application/ld+json",
+      "checksum": "a60750800b2fb106015c1ff30570da0f",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "schema.json",
+      "size_bytes": 1480,
+      "size_display": "",
+      "mime_type": "application/ld+json",
+      "checksum": "9ca4a1466918cf612e9fc498e51a6757",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "opengraph.json",
+      "size_bytes": 277,
+      "size_display": "",
+      "mime_type": "application/json",
+      "checksum": "1fc81ac17e1245fef47c48275205c226",
+      "valid": true,
+      "validation_message": ""
+    },
+    {
+      "format": "schema",
+      "filename": "twitter_card.json",
+      "size_bytes": 194,
+      "size_display": "",
+      "mime_type": "application/json",
+      "checksum": "2f7f737f9f5c1d6c2749be8bc3eb0bdf",
+      "valid": true,
+      "validation_message": ""
+    }
+  ],
+  "metadata": {
+    "title": "Test Blog Post: The Future of AI",
+    "export_id": "test-e2e-001"
+  },
+  "checksum": "7297c65264877c3f012ff2697a36d42a"
+}

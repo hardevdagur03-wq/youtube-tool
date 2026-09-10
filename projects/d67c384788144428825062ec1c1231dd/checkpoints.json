@@ -1,0 +1,15 @@
+[
+  {
+    "checkpoint_id": "cp_852a058fdc25",
+    "stage": "metadata",
+    "created_at": "2026-07-01T11:43:27.748940+00:00",
+    "reason": "stage_completed",
+    "files": {
+      "project": "project.json"
+    },
+    "checksums": {
+      "project": "ce6d85d47e6c5ef2"
+    },
+    "state_snapshot": {}
+  }
+]

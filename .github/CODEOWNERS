@@ -1,0 +1,11 @@
+# Default owners
+* @team-maintainers
+
+# Testing Platform
+/tests/ @team-qa
+
+# CI/CD
+/.github/ @team-devops
+
+# Security
+/security/ @team-security

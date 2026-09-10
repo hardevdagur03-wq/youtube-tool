@@ -1,0 +1,12 @@
+# Jaeger all-in-one configuration for distributed tracing.
+
+service:
+  admin:
+    http:
+      port: 14269
+
+sampling:
+  strategies:
+    default_strategy:
+      type: probabilistic
+      param: 0.1  # 10% sampling rate for development
