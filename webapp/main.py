@@ -63,7 +63,6 @@ from infrastructure.validation import RequestValidationMiddleware
 from models.api_response import error_response, success_response
 from services.english_converter import english_converter
 
-from database.db_session import db_lifespan, get_db_health
 from observability.config import ObservabilityConfig
 from observability.instrumentation import instrument_fastapi
 from observability.telemetry import TelemetryOrchestrator
@@ -137,35 +136,25 @@ async def lifespan(app: FastAPI):
     # Initialize observability (structured logging, tracing, metrics, Sentry)
     _telemetry.initialize()
 
-    # Initialize database connection pool and create tables
-    async with db_lifespan():
-        # Clean stale run dirs
-        if RUNS_DIR.exists():
-            stale_cutoff = time.time() - 3600
-            for entry in RUNS_DIR.iterdir():
-                if entry.is_dir() and _RUN_ID_PATTERN.match(entry.name):
-                    result_file = entry / "result.json"
-                    if not result_file.exists() and entry.stat().st_mtime < stale_cutoff:
-                        shutil.rmtree(str(entry), ignore_errors=True)
-        # Phase 23: Scan for recoverable workflows on startup
-        _recovery_scan_result = _dup_engine._recovery.scan_and_recover(
-            _dup_engine._executions
-        )
-        if _recovery_scan_result:
-            logger.info(
-                "Phase 23: Recovered %d workflow(s) on startup",
-                len(_recovery_scan_result),
-            )
+    # Clean stale run dirs
+    if RUNS_DIR.exists():
+        stale_cutoff = time.time() - 3600
+        for entry in RUNS_DIR.iterdir():
+            if entry.is_dir() and _RUN_ID_PATTERN.match(entry.name):
+                result_file = entry / "result.json"
+                if not result_file.exists() and entry.stat().st_mtime < stale_cutoff:
+                    shutil.rmtree(str(entry), ignore_errors=True)
 
-        yield
-        # Cleanup (inside db_lifespan context â€” DB still available)
-        async with _running_tasks_lock:
-            for task in _running_tasks.values():
-                task.cancel()
-            _running_tasks.clear()
-        await _async_pipeline.close()
+    yield
 
-    # Shutdown observability (after DB connections are closed)
+    # Cleanup running tasks on shutdown
+    async with _running_tasks_lock:
+        for task in _running_tasks.values():
+            task.cancel()
+        _running_tasks.clear()
+    await _async_pipeline.close()
+
+    # Shutdown observability
     _telemetry.shutdown()
 
 
@@ -201,7 +190,12 @@ async def add_request_id_middleware(request: Request, call_next):
     elapsed = round(time.time() - start, 3)
     response.headers["X-Request-ID"] = rid
     response.headers["X-Elapsed-Ms"] = str(int(elapsed * 1000))
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
+
 
 
 @app.exception_handler(Exception)
@@ -234,9 +228,7 @@ def _spa_index() -> FileResponse | HTMLResponse:
 @app.get("/")
 @app.get("/metadata")
 @app.get("/transcript")
-@app.get("/analysis")
-@app.get("/blog")
-@app.get("/blog/{path:path}")
+@app.get("/docs")
 async def spa_routes(path: str = ""):
     return _spa_index()
 
@@ -379,41 +371,6 @@ async def api_export_active() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Legacy endpoints (delegated to async)
-# ---------------------------------------------------------------------------
-
-
-@app.post("/run")
-async def legacy_run(channel: str = Form(default=""), limit: int = Form(default=0)):
-    import json
-    from fastapi import Request as FastAPIRequest
-    scope = {
-        "type": "http", "method": "POST", "path": "/api/export",
-        "headers": [(b"content-type", b"application/json")],
-        "query_string": b"", "client": ("127.0.0.1", 0), "server": ("127.0.0.1", 8000),
-        "scheme": "http", "root_path": "",
-    }
-    fake_req = FastAPIRequest(scope)
-    fake_req._body = json.dumps({"channel": channel.strip(), "limit": limit}).encode()
-    return await api_export(fake_req)
-
-
-@app.get("/api/progress/{run_id}")
-async def api_progress(run_id: str) -> dict:
-    return await api_export_progress(run_id)
-
-
-@app.get("/api/result/{run_id}")
-async def api_result(run_id: str) -> dict:
-    return await api_export_result(run_id)
-
-
-@app.get("/api/download/{run_id}")
-async def api_download(run_id: str):
-    return await api_export_download(run_id)
-
-
-# ---------------------------------------------------------------------------
 # Monitoring & Metrics
 # ---------------------------------------------------------------------------
 
@@ -421,7 +378,6 @@ async def api_download(run_id: str):
 @app.get("/api/health")
 async def api_health():
     key_ok, key_error = is_youtube_api_key_valid()
-    db_health = await get_db_health()
     redis_healthy = False
     try:
         import redis as _redis
@@ -434,8 +390,6 @@ async def api_health():
     base_path = Path(__file__).resolve().parent.parent
     usage = shutil.disk_usage(base_path)
     disk_healthy = usage.free / usage.total > 0.1
-    ai_providers = {'openai': bool(settings.openai_api_key) if hasattr(settings, 'openai_api_key') else False, 'gemini': bool(settings.gemini_api_key) if hasattr(settings, 'gemini_api_key') else False, 'anthropic': bool(settings.anthropic_api_key) if hasattr(settings, 'anthropic_api_key') else False}
-    any_ai = any(ai_providers.values())
     status = "ok" if key_ok else "degraded"
     if not key_ok:
         logger.warning("Health check: degraded state - %s", key_error)
@@ -445,16 +399,17 @@ async def api_health():
         data={
             "status": status,
             "version": "3.0",
-            "database": db_health,
+            "database": {"healthy": True, "type": "filesystem"},
             "redis": {"healthy": redis_healthy},
             "storage": {"healthy": disk_healthy, "free_percent": round(usage.free / usage.total * 100, 1)},
-            "ai_providers": ai_providers,
             "youtube_api_key_configured": key_ok,
             "youtube_api_key_error": key_error if not key_ok else None,
             "active_exports": active_count,
         },
         message="Service health check",
     )
+
+
 @app.get("/api/metrics")
 async def api_metrics():
     return metrics.get_metrics()
@@ -477,24 +432,7 @@ async def api_active_exports():
 
 
 # ---------------------------------------------------------------------------
-# Dashboard (legacy)
-# ---------------------------------------------------------------------------
-
-
-@app.get("/dashboard/{run_id}")
-async def dashboard(request: Request, run_id: str):
-    if not _safe_run_id(run_id):
-        return HTMLResponse("Invalid run ID", status_code=400)
-    run_dir = RUNS_DIR / run_id
-    if not run_dir.exists():
-        return HTMLResponse("Run not found", status_code=404)
-    from jinja2 import Environment, FileSystemLoader
-    jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=True)
-    return HTMLResponse(jinja_env.get_template("dashboard.html").render(request=request, run_id=run_id))
-
-
-# ---------------------------------------------------------------------------
-# All remaining existing routes from v2 (unchanged)
+# Core Services & Helpers
 # ---------------------------------------------------------------------------
 
 import contextvars
@@ -503,12 +441,7 @@ _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_i
 _url_parser = None
 _metadata_service = None
 _transcript_service = None
-_content_analysis_service = None
-_blog_service = None
-_seo_service = None
-_export_engine = None
 _transcript_processor = None
-_review_engine = None
 _channel_service = None
 _video_service = None
 
@@ -551,46 +484,6 @@ def _get_transcript_processor():
         from services.transcript_processor import TranscriptProcessor
         _transcript_processor = TranscriptProcessor()
     return _transcript_processor
-
-
-def _get_content_analysis_service():
-    global _content_analysis_service
-    if _content_analysis_service is None:
-        from services.content_analysis_service import ContentAnalysisService
-        _content_analysis_service = ContentAnalysisService()
-    return _content_analysis_service
-
-
-def _get_blog_service():
-    global _blog_service
-    if _blog_service is None:
-        from modules.blog.blog_service import BlogGenerationService
-        _blog_service = BlogGenerationService()
-    return _blog_service
-
-
-def _get_seo_service():
-    global _seo_service
-    if _seo_service is None:
-        from modules.seo.seo_service import SEOService
-        _seo_service = SEOService()
-    return _seo_service
-
-
-def _get_export_engine():
-    global _export_engine
-    if _export_engine is None:
-        from export.engine import ExportEngine
-        _export_engine = ExportEngine()
-    return _export_engine
-
-
-def _get_review_engine():
-    global _review_engine
-    if _review_engine is None:
-        from review.engine import ReviewEngine
-        _review_engine = ReviewEngine()
-    return _review_engine
 
 
 def _get_channel_service():
@@ -1590,152 +1483,6 @@ async def api_transcript_csv_export(req: TranscriptExportRequest):
         )
 
 
-# --- Analysis endpoints ---
-
-@app.get("/api/analyze/{video_id}")
-async def api_analyze_transcript(video_id: str, force_refresh: bool = False) -> dict:
-    import json
-    transcript_service = _get_transcript_service()
-    transcript = await _to_thread(transcript_service.get_transcript, video_id)
-    if not transcript.success:
-        raise HTTPException(status_code=404, detail={"success": False, "error": transcript.error or "No transcript available."})
-    processor = _get_transcript_processor()
-    processed = await _to_thread(processor.process, segments=transcript.segments, video_id=video_id)
-    if not processed.success:
-        raise HTTPException(status_code=422, detail={"success": False, "error": processed.error or "Failed to process."})
-    meta_service = _get_metadata_service()
-    metadata = await _to_thread(meta_service.get_metadata, video_id) if video_id else None
-    service = _get_content_analysis_service()
-    result = await _to_thread(service.analyze, transcript=processed.clean_transcript, video_id=video_id, metadata=metadata.model_dump() if metadata else None)
-    return json.loads(result.model_dump_json())
-
-
-@app.post("/api/analyze")
-async def api_analyze_direct(request: Request) -> dict:
-    import json
-    from schemas.analysis_response import AnalyzeTranscriptRequest
-    body = await request.json()
-    req = AnalyzeTranscriptRequest(**body)
-    service = _get_content_analysis_service()
-    result = await _to_thread(service.analyze, transcript=req.transcript, video_id=req.video_id, metadata=req.metadata)
-    return json.loads(result.model_dump_json())
-
-
-# --- Blog endpoints ---
-
-@app.get("/api/blog/{video_id}")
-async def api_generate_blog(video_id: str, force_refresh: bool = False) -> dict:
-    import json
-    transcript_service = _get_transcript_service()
-    transcript = await _to_thread(transcript_service.get_transcript, video_id)
-    if not transcript.success:
-        raise HTTPException(status_code=404, detail={"success": False, "error": transcript.error or "No transcript available."})
-    processor = _get_transcript_processor()
-    processed = await _to_thread(processor.process, segments=transcript.segments, video_id=video_id)
-    if not processed.success:
-        raise HTTPException(status_code=422, detail={"success": False, "error": processed.error or "Failed to process."})
-    service = _get_blog_service()
-    result = await _to_thread(service.generate, transcript=processed.clean_transcript, video_id=video_id)
-    return json.loads(result.model_dump_json())
-
-
-@app.post("/api/blog")
-async def api_generate_blog_direct(request: Request) -> dict:
-    import json
-    from models.blog_generation import BlogGenerationRequest
-    body = await request.json()
-    req = BlogGenerationRequest(**body)
-    service = _get_blog_service()
-    result = await _to_thread(service.generate, transcript=req.transcript, video_id=req.video_id, metadata=req.metadata, analysis=req.analysis)
-    return json.loads(result.model_dump_json())
-
-
-# --- SEO endpoints ---
-
-@app.post("/api/seo")
-async def api_seo_optimize(request: Request) -> dict:
-    import json
-    from models.seo_package import SEORequest
-    body = await request.json()
-    req = SEORequest(**body)
-    service = _get_seo_service()
-    result = await _to_thread(service.optimize, blog_data=req.blog, video_id=req.video_id)
-    return json.loads(result.model_dump_json())
-
-
-@app.post("/api/seo/pipeline")
-async def api_seo_full_pipeline(request: Request) -> dict:
-    import json
-    from models.blog_generation import BlogGenerationRequest
-    body = await request.json()
-    req = BlogGenerationRequest(**body)
-    blog_service = _get_blog_service()
-    blog_result = await _to_thread(blog_service.generate, transcript=req.transcript, video_id=req.video_id)
-    if not blog_result.success:
-        return json.loads(blog_result.model_dump_json())
-    seo_service = _get_seo_service()
-    seo_result = await _to_thread(seo_service.optimize, blog_data=json.loads(blog_result.model_dump_json()).get("blog", {}), video_id=req.video_id)
-    return {"success": True, "video_id": req.video_id, "blog": json.loads(blog_result.model_dump_json()).get("blog"), "seo_package": json.loads(seo_result.model_dump_json()).get("seo_package")}
-
-
-# --- Blog export endpoints ---
-
-@app.post("/api/blog-export")
-async def api_export_blog(request: Request) -> dict:
-    import json
-    from models.blog_export import ExportRequest
-    body = await request.json()
-    req = ExportRequest(**body)
-    engine = _get_export_engine()
-    result = await _to_thread(engine.export, req)
-    response = json.loads(result.model_dump_json())
-    return response
-
-
-@app.get("/api/blog-export/download/{filename:path}")
-async def api_export_download_blog(filename: str):
-    from export.engine import EXPORT_DIR
-    filepath = EXPORT_DIR / filename
-    if not filepath.exists():
-        for sub in EXPORT_DIR.iterdir():
-            if sub.is_dir():
-                candidate = sub / filename
-                if candidate.exists():
-                    filepath = candidate
-                    break
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    mime_map = {".md": "text/markdown", ".html": "text/html", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".pdf": "application/pdf", ".zip": "application/zip"}
-    mime = mime_map.get(filepath.suffix.lower(), "application/octet-stream")
-    return FileResponse(str(filepath), media_type=mime, filename=filepath.name)
-
-
-@app.get("/api/blog/{video_id}/export-ready")
-async def api_export_ready(video_id: str) -> dict:
-    try:
-        from repositories.blog_repository import BlogRepository
-        repo = BlogRepository()
-        blog_data = await _to_thread(repo.get, video_id)
-        if blog_data:
-            from models.blog_generation import BlogGenerationResult
-            blog = BlogGenerationResult(**blog_data)
-            if blog.success and blog.blog:
-                return {"success": True, "ready": True, "blog": blog.model_dump()}
-        return {"success": True, "ready": False, "blog": None}
-    except Exception as exc:
-        return {"success": False, "ready": False, "error": str(exc)}
-
-
-@app.post("/api/review")
-async def api_review_blog(request: Request) -> dict:
-    import json
-    body = await request.json()
-    from models.blog_review import BlogReviewRequest
-    req = BlogReviewRequest(**body)
-    engine = _get_review_engine()
-    response = await _to_thread(engine.review, req)
-    return json.loads(response.model_dump_json())
-
 
 # --- Validation endpoint ---
 
@@ -1757,892 +1504,6 @@ async def api_video_metadata(video_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Project Management API (NEW â€” does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-from projects.project_service import ProjectService
-from orchestrator import PipelineOrchestrator
-from orchestrator.stages import (
-    MetadataStage, TranscriptStage, AnalysisStage,
-    SEOStage, OutlineStage, SectionsStage,
-    MergeStage, ReviewStage, ExportStage,
-    KnowledgeGraphStage,
-    SEOIntelligenceStage,
-    OutlineGeneratorStage,
-)
-
-from editor.editor_service import EditorService
-from editor.editor_models import (
-    AIActionRequest, FindReplaceRequest, TranslationRequest,
-    ViewMode, EditorConfig,
-)
-
-from production_pipeline.workflow import DurableWorkflowEngine
-from production_pipeline.transaction_logger import TransactionLogger
-from production_pipeline.execution_history import ExecutionHistory
-from production_pipeline.error_handler import ErrorHandler
-from production_pipeline.recovery_manager import RecoveryManager
-from production_pipeline.resume_engine import ResumeEngine
-from production_pipeline.checkpoint_manager import CheckpointManager
-from production_pipeline.idempotency import IdempotencyFramework
-from production_pipeline.snapshot_manager import SnapshotManager
-from production_pipeline.timeout_manager import TimeoutManager
-from production_pipeline.dead_letter_queue import PipelineDeadLetterQueue
-from production_pipeline.retry_framework import RetryFramework
-from production_pipeline.stage_validator import StageValidator
-
-_project_service = ProjectService()
-
-# Pipeline Orchestrator â€” registers all stages (existing, unchanged)
-_orchestrator = PipelineOrchestrator(project_manager=_project_service.manager)
-
-# Durable Workflow Engine â€” adds checkpointing, idempotency, resume, recovery
-_tx_log = TransactionLogger()
-_dup_engine = DurableWorkflowEngine(
-    checkpoint_manager=CheckpointManager(),
-    snapshot_manager=SnapshotManager(),
-    idempotency=IdempotencyFramework(),
-    transaction_logger=_tx_log,
-    execution_history=ExecutionHistory(_tx_log),
-    error_handler=ErrorHandler(),
-    retry_framework=RetryFramework(),
-    timeout_manager=TimeoutManager(),
-    dead_letter_queue=PipelineDeadLetterQueue(),
-    recovery_manager=RecoveryManager(),
-    resume_engine=ResumeEngine(CheckpointManager()),
-    stage_validator=StageValidator(),
-)
-_orchestrator.register_stage(MetadataStage())
-_orchestrator.register_stage(TranscriptStage())
-_orchestrator.register_stage(AnalysisStage())
-_orchestrator.register_stage(SEOStage())
-_orchestrator.register_stage(OutlineStage())
-_orchestrator.register_stage(SectionsStage())
-_orchestrator.register_stage(MergeStage())
-_orchestrator.register_stage(ReviewStage())
-_orchestrator.register_stage(ExportStage())
-_orchestrator.register_stage(KnowledgeGraphStage())
-_orchestrator.register_stage(SEOIntelligenceStage())
-_orchestrator.register_stage(OutlineGeneratorStage())
-
-
-@app.post("/api/projects")
-async def api_create_project(request: Request) -> dict:
-    """Create a new project from a YouTube URL."""
-    body = await request.json()
-    url = body.get("url", "")
-    video_id = body.get("video_id", "")
-    if not url and not video_id:
-        return JSONResponse(status_code=400, content={"success": False, "error": "url or video_id required"})
-    result = _project_service.create_from_url(url=url, video_id=video_id)
-    return {"success": True, "project": result}
-
-
-@app.get("/api/projects")
-async def api_list_projects(limit: int = 50, offset: int = 0, search: str = "") -> dict:
-    """List all projects with optional search."""
-    if search:
-        projects = _project_service.search(search, limit=limit)
-    else:
-        projects = _project_service.list_all(limit=limit, offset=offset)
-    return {"success": True, "projects": projects, "count": len(projects)}
-
-
-@app.get("/api/projects/stats")
-async def api_project_stats() -> dict:
-    """Get project statistics."""
-    stats = _project_service.get_stats()
-    return {"success": True, **stats}
-
-
-@app.get("/api/projects/{project_id}")
-async def api_get_project(project_id: str) -> dict:
-    """Get a single project with full details."""
-    project = _project_service.get(project_id)
-    if project is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-    return {"success": True, "project": project}
-
-
-@app.delete("/api/projects/{project_id}")
-async def api_delete_project(project_id: str, permanent: bool = False) -> dict:
-    """Delete a project (soft delete by default)."""
-    return _project_service.delete(project_id, permanent=permanent)
-
-
-@app.post("/api/projects/{project_id}/resume")
-async def api_resume_project(project_id: str) -> dict:
-    """Resume a paused or failed project."""
-    result = _project_service.resume(project_id)
-    if result is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-    return {"success": True, "project": result}
-
-
-@app.post("/api/projects/{project_id}/pause")
-async def api_pause_project(project_id: str) -> dict:
-    """Pause a running project."""
-    return _project_service.pause(project_id)
-
-
-@app.post("/api/projects/{project_id}/cancel")
-async def api_cancel_project(project_id: str) -> dict:
-    """Cancel a project."""
-    return _project_service.cancel(project_id)
-
-
-@app.get("/api/projects/{project_id}/history")
-async def api_project_history(project_id: str, limit: int = 50) -> dict:
-    """Get project history/audit trail."""
-    history = _project_service.get_history(project_id, limit=limit)
-    return {"success": True, "history": history}
-
-
-@app.get("/api/projects/{project_id}/checkpoints")
-async def api_project_checkpoints(project_id: str) -> dict:
-    """Get project checkpoints."""
-    checkpoints = _project_service.get_checkpoints(project_id)
-    return {"success": True, "checkpoints": checkpoints}
-
-
-@app.get("/api/projects/{project_id}/versions")
-async def api_project_versions(project_id: str) -> dict:
-    """Get project version history."""
-    versions = _project_service.get_versions(project_id)
-    return {"success": True, "versions": versions}
-
-
-@app.post("/api/projects/{project_id}/restore/{version_number}")
-async def api_restore_version(project_id: str, version_number: int) -> dict:
-    """Restore a project to a previous version."""
-    result = _project_service.restore_version(project_id, version_number)
-    if result is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Version not found"})
-    return {"success": True, "project": result}
-
-
-@app.get("/api/projects/{project_id}/validate")
-async def api_validate_project(project_id: str) -> dict:
-    """Validate project artifacts."""
-    issues = _project_service.validate(project_id)
-    return {"success": True, "issues": issues, "healthy": len(issues) == 0}
-
-
-@app.put("/api/projects/{project_id}/settings")
-async def api_update_settings(project_id: str, request: Request) -> dict:
-    """Update project settings."""
-    body = await request.json()
-    result = _project_service.update_settings(project_id, body)
-    if result is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-    return {"success": True, "project": result}
-
-
-# ---------------------------------------------------------------------------
-# Knowledge Graph API (NEW â€” does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-from knowledge_graph.knowledge_graph_service import KnowledgeGraphService
-
-_knowledge_graph_service = KnowledgeGraphService(
-    project_manager=_project_service.manager,
-    cache_manager=_orchestrator.cache,
-)
-
-
-@app.post("/api/knowledge-graph/build")
-async def api_kg_build(request: Request) -> dict:
-    """Build a knowledge graph from existing project artifacts."""
-    body = await request.json()
-    project_id = body.get("project_id", "")
-    if not project_id:
-        return JSONResponse(status_code=400, content={"success": False, "error": "project_id required"})
-
-    project = _project_service.get(project_id)
-    if project is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-
-    metadata = _project_service.manager.load_stage_data(project_id, "metadata")
-    transcript = _project_service.manager.load_stage_data(project_id, "transcript")
-    analysis = _project_service.manager.load_stage_data(project_id, "analysis")
-
-    kg = _knowledge_graph_service.build(
-        project_id=project_id,
-        metadata=metadata,
-        transcript=transcript,
-        analysis=analysis,
-    )
-    return {"success": True, "knowledge_graph": kg.model_dump(), "summary": kg.summary}
-
-
-@app.get("/api/knowledge-graph/{project_id}")
-async def api_kg_get(project_id: str) -> dict:
-    """Get stored knowledge graph for a project."""
-    kg = _knowledge_graph_service.get_stored(project_id)
-    if kg is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Knowledge graph not found"})
-    return {"success": True, "knowledge_graph": kg.model_dump(), "summary": kg.summary}
-
-
-@app.get("/api/knowledge-graph/{project_id}/summary")
-async def api_kg_summary(project_id: str) -> dict:
-    """Get knowledge graph summary statistics."""
-    kg = _knowledge_graph_service.get_stored(project_id)
-    if kg is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Knowledge graph not found"})
-    return {"success": True, "summary": kg.summary}
-
-
-@app.get("/api/knowledge-graph/{project_id}/entities")
-async def api_kg_entities(project_id: str) -> dict:
-    """Get entities from knowledge graph."""
-    kg = _knowledge_graph_service.get_stored(project_id)
-    if kg is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Knowledge graph not found"})
-    return {
-        "success": True,
-        "entities": [e.model_dump() for e in kg.entities],
-        "count": kg.entity_count(),
-    }
-
-
-@app.get("/api/knowledge-graph/{project_id}/relationships")
-async def api_kg_relationships(project_id: str) -> dict:
-    """Get relationships from knowledge graph."""
-    kg = _knowledge_graph_service.get_stored(project_id)
-    if kg is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Knowledge graph not found"})
-    return {
-        "success": True,
-        "relationships": [r.model_dump() for r in kg.relationships],
-        "count": kg.relationship_count(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# SEO Intelligence API (NEW â€” does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-from seo_intelligence.seo_service import SEOService as _SEOService
-
-_seo_service = _SEOService(
-    project_manager=_project_service.manager,
-    cache_manager=_orchestrator.cache,
-)
-
-
-@app.post("/api/seo-intelligence/build")
-async def api_seo_build(request: Request) -> dict:
-    """Build an SEO plan from existing project artifacts."""
-    body = await request.json()
-    project_id = body.get("project_id", "")
-    if not project_id:
-        return JSONResponse(status_code=400, content={"success": False, "error": "project_id required"})
-
-    project = _project_service.get(project_id)
-    if project is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-
-    kg = _project_service.manager.load_stage_data(project_id, "knowledge_graph")
-    analysis = _project_service.manager.load_stage_data(project_id, "analysis")
-    metadata = _project_service.manager.load_stage_data(project_id, "metadata")
-
-    plan = _seo_service.build(
-        project_id=project_id,
-        knowledge_graph=kg,
-        analysis=analysis,
-        metadata=metadata,
-    )
-    return {"success": True, "seo_plan": plan.model_dump(), "summary": plan.summary}
-
-
-@app.get("/api/seo-intelligence/{project_id}")
-async def api_seo_get(project_id: str) -> dict:
-    """Get stored SEO plan for a project."""
-    plan = _seo_service.get_stored(project_id)
-    if plan is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "SEO plan not found"})
-    return {"success": True, "seo_plan": plan.model_dump(), "summary": plan.summary}
-
-
-@app.get("/api/seo-intelligence/{project_id}/summary")
-async def api_seo_summary(project_id: str) -> dict:
-    """Get SEO plan summary."""
-    plan = _seo_service.get_stored(project_id)
-    if plan is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "SEO plan not found"})
-    return {"success": True, "summary": plan.summary}
-
-
-@app.get("/api/seo-intelligence/{project_id}/keywords")
-async def api_seo_keywords(project_id: str) -> dict:
-    """Get keyword strategy from SEO plan."""
-    plan = _seo_service.get_stored(project_id)
-    if plan is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "SEO plan not found"})
-    return {
-        "success": True,
-        "keyword_strategy": plan.keyword_strategy.model_dump(),
-    }
-
-
-@app.get("/api/seo-intelligence/{project_id}/scores")
-async def api_seo_scores(project_id: str) -> dict:
-    """Get SEO scores."""
-    plan = _seo_service.get_stored(project_id)
-    if plan is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "SEO plan not found"})
-    return {"success": True, "scores": plan.scores.model_dump()}
-
-
-# ---------------------------------------------------------------------------
-# Outline Generator API (NEW â€” does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-from outline_generator.outline_service import OutlineService as _OutlineService
-
-_outline_service = _OutlineService(
-    project_manager=_project_service.manager,
-    cache_manager=_orchestrator.cache,
-)
-
-
-@app.post("/api/outline/build")
-async def api_outline_build(request: Request) -> dict:
-    """Build a content outline from existing project artifacts."""
-    body = await request.json()
-    project_id = body.get("project_id", "")
-    if not project_id:
-        return JSONResponse(status_code=400, content={"success": False, "error": "project_id required"})
-
-    project = _project_service.get(project_id)
-    if project is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Project not found"})
-
-    kg = _project_service.manager.load_stage_data(project_id, "knowledge_graph")
-    seo_plan = _project_service.manager.load_stage_data(project_id, "seo_intelligence")
-    if not seo_plan:
-        seo_plan = _project_service.manager.load_stage_data(project_id, "seo_plan")
-    analysis = _project_service.manager.load_stage_data(project_id, "analysis")
-    metadata = _project_service.manager.load_stage_data(project_id, "metadata")
-
-    outline = _outline_service.build(
-        project_id=project_id,
-        knowledge_graph=kg,
-        seo_plan=seo_plan,
-        analysis=analysis,
-        metadata=metadata,
-    )
-    return {"success": True, "outline": outline.model_dump(), "summary": outline.summary}
-
-
-@app.get("/api/outline/{project_id}")
-async def api_outline_get(project_id: str) -> dict:
-    """Get stored outline for a project."""
-    outline = _outline_service.get_stored(project_id)
-    if outline is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Outline not found"})
-    return {"success": True, "outline": outline.model_dump(), "summary": outline.summary}
-
-
-@app.get("/api/outline/{project_id}/summary")
-async def api_outline_summary(project_id: str) -> dict:
-    """Get outline summary."""
-    outline = _outline_service.get_stored(project_id)
-    if outline is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Outline not found"})
-    return {"success": True, "summary": outline.summary}
-
-
-@app.get("/api/outline/{project_id}/sections")
-async def api_outline_sections(project_id: str) -> dict:
-    """Get sections from outline."""
-    outline = _outline_service.get_stored(project_id)
-    if outline is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Outline not found"})
-    return {
-        "success": True,
-        "sections": [s.model_dump() for s in outline.sections],
-        "count": len(outline.sections),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Pipeline Orchestrator API (NEW â€” does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-
-@app.post("/api/pipeline/run")
-async def api_pipeline_run(request: Request) -> dict:
-    """Run the full pipeline for a video."""
-    body = await request.json()
-    video_id = body.get("video_id", "")
-    url = body.get("url", "")
-    project_id = body.get("project_id", "")
-
-    if not video_id and not url:
-        return JSONResponse(status_code=400, content={"success": False, "error": "video_id or url required"})
-
-    # Create or reuse project
-    if not project_id:
-        result = _project_service.create_from_url(url=url, video_id=video_id)
-        project_id = result["project_id"]
-
-    result = await _orchestrator.run_pipeline(project_id, video_id=video_id, url=url)
-    return {"success": True, **result}
-
-
-@app.get("/api/pipeline/{project_id}/progress")
-async def api_pipeline_progress(project_id: str) -> dict:
-    """Get pipeline execution progress."""
-    progress = _orchestrator.get_progress(project_id)
-    if progress is None:
-        return {"success": False, "error": "Pipeline not found"}
-    return {"success": True, **progress}
-
-
-@app.get("/api/pipeline/{project_id}/stages/{stage}")
-async def api_pipeline_stage(project_id: str, stage: str) -> dict:
-    """Get stage execution info."""
-    info = _orchestrator.get_stage_info(project_id, stage)
-    if info is None:
-        return {"success": False, "error": "Stage not found"}
-    return {"success": True, "stage": info}
-
-
-@app.post("/api/pipeline/{project_id}/pause")
-async def api_pipeline_pause(project_id: str) -> dict:
-    """Pause pipeline execution."""
-    success = await _orchestrator.pause_pipeline(project_id)
-    return {"success": success}
-
-
-@app.post("/api/pipeline/{project_id}/resume")
-async def api_pipeline_resume(project_id: str) -> dict:
-    """Resume pipeline execution."""
-    success = await _orchestrator.resume_pipeline(project_id)
-    return {"success": success}
-
-
-@app.post("/api/pipeline/{project_id}/cancel")
-async def api_pipeline_cancel(project_id: str) -> dict:
-    """Cancel pipeline execution."""
-    success = await _orchestrator.cancel_pipeline(project_id)
-    return {"success": success}
-
-
-@app.get("/api/pipeline/{project_id}/history")
-async def api_pipeline_history(project_id: str, limit: int = 50) -> dict:
-    """Get pipeline execution history (events)."""
-    history = _orchestrator.get_history(project_id, limit=limit)
-    return {"success": True, "history": history, "count": len(history)}
-
-
-@app.get("/api/pipeline/active")
-async def api_pipeline_active() -> dict:
-    """List active pipelines."""
-    active = _orchestrator.active_pipelines
-    return {"success": True, "active": active, "count": len(active)}
-
-
-@app.get("/api/pipeline/metrics")
-async def api_pipeline_metrics() -> dict:
-    """Get pipeline execution metrics."""
-    metrics = _orchestrator.get_metrics_report()
-    return {"success": True, "metrics": metrics}
-
-
-@app.get("/api/pipeline/cache/stats")
-async def api_pipeline_cache_stats() -> dict:
-    """Get pipeline cache statistics."""
-    stats = _orchestrator.get_cache_stats()
-    return {"success": True, "cache": stats}
-
-
-@app.delete("/api/pipeline/cache")
-async def api_pipeline_cache_clear() -> dict:
-    """Clear pipeline cache."""
-    _orchestrator.clear_cache()
-    return {"success": True}
-
-
-# ---------------------------------------------------------------------------
-# Phase 23 â€” Durable Pipeline API (additive, does not modify existing endpoints)
-# ---------------------------------------------------------------------------
-
-
-@app.post("/api/v2/pipeline/run")
-async def api_v2_pipeline_run(request: Request) -> dict:
-    """Run the full pipeline with durable execution guarantees.
-
-    Features: checkpointing, idempotency, crash recovery, execution history.
-    """
-    body = await request.json()
-    video_id = body.get("video_id", "")
-    url = body.get("url", "")
-    project_id = body.get("project_id", "")
-
-    if not video_id and not url:
-        return JSONResponse(status_code=400, content={
-            "success": False, "error": "video_id or url required"
-        })
-
-    import uuid
-    execution_id = str(uuid.uuid4())
-
-    # Create or reuse project
-    if not project_id:
-        result = _project_service.create_from_url(url=url, video_id=video_id)
-        project_id = result["project_id"]
-
-    # Register stage executors from the existing orchestrator
-    from orchestrator.stages import (
-        MetadataStage, TranscriptStage, AnalysisStage,
-        SEOStage, OutlineStage, SectionsStage,
-        MergeStage, ReviewStage, ExportStage,
-        KnowledgeGraphStage, SEOIntelligenceStage,
-    )
-
-    async def _wrap_stage(stage_class, stage_name):
-        instance = stage_class()
-
-        async def _execute(ctx):
-            pipeline_ctx = type('obj', (object,), {
-                'video_id': ctx.get('video_id', video_id),
-                'project_id': ctx.get('project_id', project_id),
-                'metadata': ctx.get('metadata', {}),
-                'transcript': ctx.get('transcript', {}),
-                'analysis': ctx.get('analysis', {}),
-                'seo': ctx.get('seo', {}),
-                'outline': ctx.get('outline', {}),
-                'sections': ctx.get('sections', []),
-                'merged_blog': ctx.get('merged_blog', {}),
-                'review': ctx.get('review', {}),
-                'export': ctx.get('export', {}),
-            })
-            result = await instance.execute(pipeline_ctx)
-            if result.success:
-                return result.data
-            raise Exception(result.error)
-
-        _dup_engine.register_stage_executor(stage_name, _execute)
-        return _execute
-
-    await _wrap_stage(MetadataStage, "metadata")
-    await _wrap_stage(TranscriptStage, "transcript")
-    await _wrap_stage(AnalysisStage, "analysis")
-    await _wrap_stage(KnowledgeGraphStage, "knowledge_graph")
-    await _wrap_stage(SEOStage, "seo")
-    await _wrap_stage(SEOIntelligenceStage, "seo_intelligence")
-    await _wrap_stage(OutlineStage, "outline")
-    await _wrap_stage(SectionsStage, "sections")
-    await _wrap_stage(MergeStage, "review")
-    await _wrap_stage(ReviewStage, "review_quality")
-    await _wrap_stage(ExportStage, "export")
-
-    result = await _dup_engine.run_workflow(
-        execution_id=execution_id,
-        video_id=video_id,
-        project_id=project_id,
-    )
-
-    return {
-        "success": result["success"],
-        "execution_id": execution_id,
-        "project_id": project_id,
-        "status": result.get("error", "completed") if not result["success"] else "completed",
-        "completed_stages": result.get("completed_stages", []),
-        "duration_ms": result.get("duration_ms", 0),
-        "error": result.get("error", ""),
-    }
-
-
-@app.get("/api/v2/pipeline/{execution_id}/status")
-async def api_v2_pipeline_status(execution_id: str) -> dict:
-    """Get the status of a durable pipeline execution."""
-    status = _dup_engine.get_workflow_status(execution_id)
-    if status is None:
-        return {"success": False, "error": "Execution not found"}
-    return {"success": True, **status}
-
-
-@app.get("/api/v2/pipeline/{execution_id}/history")
-async def api_v2_pipeline_history(execution_id: str) -> dict:
-    """Get the full execution timeline for a durable pipeline."""
-    timeline = _dup_engine._exec_history.get_timeline(execution_id)
-    return {"success": True, "execution_id": execution_id, "timeline": timeline, "count": len(timeline)}
-
-
-@app.get("/api/v2/pipeline/{execution_id}/summary")
-async def api_v2_pipeline_summary(execution_id: str) -> dict:
-    """Get the execution summary for a durable pipeline."""
-    summary = _dup_engine._exec_history.get_summary(execution_id)
-    return {"success": True, **summary}
-
-
-@app.get("/api/v2/pipeline/{execution_id}/checkpoints")
-async def api_v2_pipeline_checkpoints(execution_id: str) -> dict:
-    """Get all checkpoints for a durable pipeline execution."""
-    checkpoints = _dup_engine._checkpoints.list_checkpoints(execution_id)
-    return {
-        "success": True,
-        "checkpoints": [
-            {
-                "stage": cp.stage_name,
-                "index": cp.stage_index,
-                "status": cp.status,
-                "duration_ms": cp.duration_ms,
-                "input_hash": cp.input_hash[:12],
-                "output_hash": cp.output_hash[:12],
-            }
-            for cp in checkpoints
-        ],
-        "count": len(checkpoints),
-    }
-
-
-@app.post("/api/v2/pipeline/{execution_id}/resume")
-async def api_v2_pipeline_resume(execution_id: str) -> dict:
-    """Resume a failed or recovering pipeline execution."""
-    result = await _dup_engine.resume_workflow(execution_id)
-    return {"success": True, **result}
-
-
-@app.post("/api/v2/pipeline/{execution_id}/cancel")
-async def api_v2_pipeline_cancel(execution_id: str) -> dict:
-    """Cancel a running pipeline execution."""
-    success = await _dup_engine.cancel_workflow(execution_id)
-    return {"success": success}
-
-
-# ---------------------------------------------------------------------------
-# Editor API â€” Rich Blog Editor endpoints
-# ---------------------------------------------------------------------------
-
-_editor_service = EditorService(
-    project_manager=_project_service.manager,
-    storage_dir=Path(_project_service.manager.storage.base_path) if hasattr(_project_service.manager.storage, 'base_path') else None,
-)
-
-
-@app.get("/api/editor/{project_id}")
-async def api_editor_load(project_id: str) -> dict:
-    """Load editor state for a project."""
-    result = _editor_service.load_draft(project_id)
-    stats = _editor_service.get_statistics(project_id)
-    seo_score = _editor_service.get_seo_score(project_id)
-    headings = _editor_service.get_heading_navigation(project_id)
-    versions = [v.model_dump() for v in _editor_service.list_versions(project_id)]
-    return {
-        "success": True,
-        "project_id": project_id,
-        "content": result.get("content", ""),
-        "title": result.get("title", ""),
-        "statistics": stats.model_dump(),
-        "seo_score": seo_score,
-        "headings": headings,
-        "versions": versions,
-    }
-
-
-@app.post("/api/editor/{project_id}/save")
-async def api_editor_save(project_id: str, request: Request) -> dict:
-    """Save editor content."""
-    body = await request.json()
-    content = body.get("content", "")
-    title = body.get("title", "")
-    result = _editor_service.save_draft(project_id, content=content, title=title)
-    return {
-        "success": True,
-        "project_id": project_id,
-        "saved_at": result.get("saved_at", ""),
-    }
-
-
-@app.get("/api/editor/{project_id}/content")
-async def api_editor_content(project_id: str) -> dict:
-    """Get current editor content."""
-    content = _editor_service.get_draft_content(project_id)
-    return {"success": True, "content": content}
-
-
-@app.post("/api/editor/{project_id}/content")
-async def api_editor_set_content(project_id: str, request: Request) -> dict:
-    """Set editor content."""
-    body = await request.json()
-    content = body.get("content", "")
-    _editor_service.set_content(project_id, content)
-    return {"success": True}
-
-
-@app.get("/api/editor/{project_id}/stats")
-async def api_editor_stats(project_id: str) -> dict:
-    """Get document statistics."""
-    stats = _editor_service.get_statistics(project_id)
-    seo_score = _editor_service.get_seo_score(project_id)
-    return {"success": True, "statistics": stats.model_dump(), "seo_score": seo_score}
-
-
-@app.get("/api/editor/{project_id}/validate")
-async def api_editor_validate(project_id: str) -> dict:
-    """Validate document."""
-    results = _editor_service.validate(project_id)
-    return {"success": True, "validations": results, "count": len(results)}
-
-
-@app.post("/api/editor/{project_id}/undo")
-async def api_editor_undo(project_id: str) -> dict:
-    """Undo last action."""
-    result = _editor_service.undo(project_id)
-    return {
-        "success": True,
-        "content": result or "",
-        "can_undo": _editor_service.can_undo(project_id),
-        "can_redo": _editor_service.can_redo(project_id),
-    }
-
-
-@app.post("/api/editor/{project_id}/redo")
-async def api_editor_redo(project_id: str) -> dict:
-    """Redo last undone action."""
-    result = _editor_service.redo(project_id)
-    return {
-        "success": True,
-        "content": result or "",
-        "can_undo": _editor_service.can_undo(project_id),
-        "can_redo": _editor_service.can_redo(project_id),
-    }
-
-
-@app.get("/api/editor/{project_id}/history")
-async def api_editor_history(project_id: str) -> dict:
-    """Get undo/redo state."""
-    return {
-        "success": True,
-        "can_undo": _editor_service.can_undo(project_id),
-        "can_redo": _editor_service.can_redo(project_id),
-    }
-
-
-@app.post("/api/editor/{project_id}/version")
-async def api_editor_create_version(project_id: str, request: Request) -> dict:
-    """Create a named version snapshot."""
-    body = await request.json()
-    label = body.get("label", "")
-    reason = body.get("reason", "manual_save")
-    version = _editor_service.create_version(project_id, label=label, reason=reason)
-    return {"success": True, "version": version.model_dump()}
-
-
-@app.get("/api/editor/{project_id}/versions")
-async def api_editor_versions(project_id: str) -> dict:
-    """List all versions."""
-    versions = [v.model_dump() for v in _editor_service.list_versions(project_id)]
-    return {"success": True, "versions": versions, "count": len(versions)}
-
-
-@app.get("/api/editor/{project_id}/versions/{version_number}")
-async def api_editor_version_content(project_id: str, version_number: int) -> dict:
-    """Get content of a specific version."""
-    content = _editor_service.get_version_content(project_id, version_number)
-    if content is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Version not found"})
-    return {"success": True, "content": content, "version": version_number}
-
-
-@app.get("/api/editor/{project_id}/diff")
-async def api_editor_diff(project_id: str, old: int = 0, new: int = 0) -> dict:
-    """Diff two versions."""
-    if old <= 0:
-        old = 1
-    if new <= 0:
-        versions = _editor_service.list_versions(project_id)
-        new = versions[-1].version_number if versions else 1
-    diff = _editor_service.diff_versions(project_id, old, new)
-    if diff is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Diff not available"})
-    return {"success": True, "diff": diff.model_dump()}
-
-
-@app.post("/api/editor/{project_id}/restore/{version_number}")
-async def api_editor_restore(project_id: str, version_number: int) -> dict:
-    """Restore document to a previous version."""
-    content = _editor_service.restore_version(project_id, version_number)
-    if content is None:
-        return JSONResponse(status_code=404, content={"success": False, "error": "Version not found"})
-    return {"success": True, "content": content, "version": version_number}
-
-
-@app.post("/api/editor/{project_id}/find")
-async def api_editor_find(project_id: str, request: Request) -> dict:
-    """Find text in document."""
-    body = await request.json()
-    req = FindReplaceRequest(**body)
-    result = _editor_service.find_in_document(project_id, req)
-    return {"success": True, "result": result.model_dump()}
-
-
-@app.post("/api/editor/{project_id}/replace")
-async def api_editor_replace(project_id: str, request: Request) -> dict:
-    """Replace text in document."""
-    body = await request.json()
-    req = FindReplaceRequest(**body)
-    result = _editor_service.replace_in_document(project_id, req)
-    return {"success": True, "result": result.model_dump()}
-
-
-@app.post("/api/editor/{project_id}/ai")
-async def api_editor_ai(project_id: str, request: Request) -> dict:
-    """Execute an AI action on selected text."""
-    body = await request.json()
-    req = AIActionRequest(**body)
-    result = _editor_service.execute_ai_action(project_id, req)
-    return {"success": result.success, "result": result.model_dump()}
-
-
-@app.post("/api/editor/{project_id}/translate")
-async def api_editor_translate(project_id: str, request: Request) -> dict:
-    """Translate document or selection."""
-    body = await request.json()
-    req = TranslationRequest(**body)
-    result = _editor_service.translate_document(project_id, req)
-    return {"success": result.success, "result": result.model_dump()}
-
-
-@app.get("/api/editor/{project_id}/headings")
-async def api_editor_headings(project_id: str) -> dict:
-    """Get document heading outline."""
-    headings = _editor_service.get_heading_navigation(project_id)
-    return {"success": True, "headings": headings, "count": len(headings)}
-
-
-@app.get("/api/editor/{project_id}/autosave")
-async def api_editor_autosave_check(project_id: str) -> dict:
-    """Check if autosave recovery data exists."""
-    content = _editor_service.recover_autosave(project_id)
-    return {
-        "success": True,
-        "has_recovery": content is not None,
-        "content": content or "",
-    }
-
-
-@app.post("/api/editor/{project_id}/autosave/clear")
-async def api_editor_autosave_clear(project_id: str) -> dict:
-    """Clear autosave recovery data."""
-    _editor_service.clear_autosave(project_id)
-    return {"success": True}
-
-
-@app.get("/api/editor/supported-languages")
-async def api_editor_languages() -> dict:
-    """Get supported translation languages."""
-    from editor.translation_engine import LANGUAGE_MAP
-    languages = [{"code": code, "name": name} for code, name in sorted(LANGUAGE_MAP.items(), key=lambda x: x[1])]
-    return {"success": True, "languages": languages, "count": len(languages)}
-
-
-# ---------------------------------------------------------------------------
 # SPA catch-all
 # ---------------------------------------------------------------------------
 
@@ -2651,7 +1512,6 @@ async def api_editor_languages() -> dict:
 async def spa_catch_all(path: str):
     if (
         path.startswith("api")
-        or path.startswith("dashboard")
         or path.startswith("static")
         or path.startswith("assets")
         or path.startswith("docs")
@@ -2660,6 +1520,3 @@ async def spa_catch_all(path: str):
     ):
         return JSONResponse(status_code=404, content={"error": "Not found"})
     return _spa_index()
-
-
-

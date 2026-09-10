@@ -1,6 +1,0 @@
-# Test
-
-## Metadata
-
-| Field | Value |
-|-------|-------|

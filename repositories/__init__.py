@@ -1,6 +1,7 @@
 """Data repositories for caching."""
-from .analysis_repository import AnalysisRepository
+from .transcript_repository import TranscriptRepository
 
 __all__ = [
-    "AnalysisRepository",
+    "TranscriptRepository",
 ]
+

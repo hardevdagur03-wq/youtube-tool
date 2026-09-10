@@ -8,11 +8,8 @@ import { Button } from '../ui';
 const navLinks = [
   { label: 'Metadata', path: '/metadata' },
   { label: 'Transcript', path: '/transcript' },
-  { label: 'AI Blog', path: '/blog' },
   { label: 'Docs', path: '/docs' },
 ];
-
-const isBlogPath = (path: string) => path === '/blog' || path.startsWith('/blog/');
 
 export default function Navbar() {
   const { dark, toggle } = useTheme();
@@ -65,9 +62,7 @@ export default function Navbar() {
           {/* RIGHT: Navigation + Docs + Theme + GitHub */}
           <nav className="hidden md:flex items-center gap-1.5">
             {navLinks.map((link) => {
-              const isActive = link.path === '/blog'
-                ? isBlogPath(location.pathname)
-                : location.pathname === link.path;
+              const isActive = location.pathname === link.path;
 
               return (
                 <Link
@@ -139,9 +134,7 @@ export default function Navbar() {
           >
             <div className="px-4 py-4 space-y-1">
               {navLinks.map((link) => {
-                const isActive = link.path === '/blog'
-                  ? isBlogPath(location.pathname)
-                  : location.pathname === link.path;
+                const isActive = location.pathname === link.path;
 
                 return (
                   <Link

@@ -6,8 +6,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import JWTError, jwt
-from jose.constants import ALGORITHMS
+try:
+    from jose import JWTError, jwt
+    from jose.constants import ALGORITHMS
+    _DEFAULT_ALGORITHM = ALGORITHMS.HS256
+except ImportError:
+    import jwt
+    from jwt.exceptions import PyJWTError as JWTError, ExpiredSignatureError
+    _DEFAULT_ALGORITHM = "HS256"
 
 from security.security_models import (
     AuthenticationError, InvalidTokenError, TokenExpiredError, User,
@@ -19,10 +25,11 @@ class JWTConfig:
     secret_key: str = field(
         default_factory=lambda: os.getenv("JWT_SECRET_KEY", "change-me-in-production-32-chars!")
     )
-    algorithm: str = ALGORITHMS.HS256
+    algorithm: str = _DEFAULT_ALGORITHM
     access_token_expire_minutes: int = field(
         default_factory=lambda: int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     )
+
     refresh_token_expire_days: int = field(
         default_factory=lambda: int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     )

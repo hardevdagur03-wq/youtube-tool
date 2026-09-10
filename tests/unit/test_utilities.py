@@ -86,18 +86,8 @@ class TestTokenCounter:
         pass
 
 
-class TestPromptBuilder:
-    def test_build_prompt(self):
-        from utils.prompt_builder import build_analysis_prompt
-        prompt = build_analysis_prompt(transcript="Test transcript", video_id="abc123")
-        assert isinstance(prompt, str)
-        assert "Test transcript" in prompt
-
-    def test_add_examples(self):
-        pass
-
-
 class TestTextCleaner:
+
     def test_clean_text(self):
         from utils.text_cleaner import TextCleaner
         cleaned = TextCleaner().clean_text("  Python  is  great!  ")

@@ -7,7 +7,7 @@ import {
   Copy, Check,
 } from 'lucide-react';
 import { Container, Badge, Card } from '../components/ui';
-import VideoUrlInput from '../components/blog/VideoUrlInput';
+import VideoUrlInput from '../components/transcript/VideoUrlInput';
 import { transcriptService } from '../services/TranscriptService';
 import type {
   ChannelVideoTranscriptSimple,
