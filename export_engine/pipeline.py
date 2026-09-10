@@ -80,33 +80,38 @@ class ExportPipeline:
             stage = ProgressStage.CHECK_CACHE
             if self._check_cancelled(job_id, logger):
                 return
-            if self._try_cache_lookup(job_id, request, logger):
-                return
+            cached_data = self._try_cache_lookup(job_id, request, logger)
 
-            stage = ProgressStage.RESOLVE_CHANNEL
-            if self._check_cancelled(job_id, logger):
-                return
-            logger.info("Stage: resolve channel")
-            self._job_manager.update_stage(job_id, stage, JobStatus.RUNNING, "Resolving channel...")
-            resolved = self._resolve_channel(job_id, request.channel_input, logger)
-            channel_id = resolved["channel_id"]
-            channel_title = resolved["title"]
-            cache_hits += 1 if cache_service.get_channel_by_id(channel_id) else 0
-            self._job_manager.update_stage(
-                job_id, stage, JobStatus.COMPLETED,
-                detail=f"Found: {channel_title}",
-            )
+            if cached_data:
+                channel_id = cached_data["channel_id"]
+                channel_title = cached_data["channel_title"]
+                playlist_id = cached_data["playlist_id"]
+                cache_hits += cached_data.get("cache_hits", 2)
+            else:
+                stage = ProgressStage.RESOLVE_CHANNEL
+                if self._check_cancelled(job_id, logger):
+                    return
+                logger.info("Stage: resolve channel")
+                self._job_manager.update_stage(job_id, stage, JobStatus.RUNNING, "Resolving channel...")
+                resolved = self._resolve_channel(job_id, request.channel_input, logger)
+                channel_id = resolved["channel_id"]
+                channel_title = resolved["title"]
+                cache_hits += 1 if cache_service.get_channel_by_id(channel_id) else 0
+                self._job_manager.update_stage(
+                    job_id, stage, JobStatus.COMPLETED,
+                    detail=f"Found: {channel_title}",
+                )
 
-            stage = ProgressStage.FETCH_PLAYLIST
-            if self._check_cancelled(job_id, logger):
-                return
-            logger.info("Stage: fetch playlist")
-            self._job_manager.update_stage(job_id, stage, JobStatus.RUNNING, "Fetching upload playlist...")
-            playlist_id = self._get_playlist_id(job_id, channel_id, logger)
-            self._job_manager.update_stage(
-                job_id, stage, JobStatus.COMPLETED,
-                detail=f"Playlist: {playlist_id}",
-            )
+                stage = ProgressStage.FETCH_PLAYLIST
+                if self._check_cancelled(job_id, logger):
+                    return
+                logger.info("Stage: fetch playlist")
+                self._job_manager.update_stage(job_id, stage, JobStatus.RUNNING, "Fetching upload playlist...")
+                playlist_id = self._get_playlist_id(job_id, channel_id, logger)
+                self._job_manager.update_stage(
+                    job_id, stage, JobStatus.COMPLETED,
+                    detail=f"Playlist: {playlist_id}",
+                )
 
             # -----------------------------------------------------------------------
             # Stage: Fetch Video IDs + Metadata (overlapped producer-consumer)
@@ -235,8 +240,16 @@ class ExportPipeline:
 
                     # Process completed futures
                     if pending_futures:
-                        done = []
-                        for future in as_completed(list(pending_futures.keys()), timeout=0.01):
+                        done = [f for f in pending_futures.keys() if f.done()]
+                        if not done and all_video_ids_collected:
+                            try:
+                                for future in as_completed(list(pending_futures.keys()), timeout=1.0):
+                                    done.append(future)
+                                    break
+                            except Exception:
+                                pass
+
+                        for future in done:
                             try:
                                 batch_size, items = future.result()
                                 api_calls_meta += 1
@@ -252,10 +265,7 @@ class ExportPipeline:
                                     records_written += 1
                             except Exception as exc:
                                 logger.warning("Batch future failed: %s", exc)
-                            done.append(future)
-
-                        for f in done:
-                            pending_futures.pop(f, None)
+                            pending_futures.pop(future, None)
                             processed_batches += 1
 
                         if all_video_ids_collected:
@@ -397,9 +407,12 @@ class ExportPipeline:
             return True
         return False
 
-    def _try_cache_lookup(self, job_id: str, request: ExportRequest, logger: Any) -> bool:
+    def _try_cache_lookup(self, job_id: str, request: ExportRequest, logger: Any) -> dict | None:
         channel_input = request.channel_input.strip().lower()
-        cached = cache_service.get_channel_by_handle(channel_input)
+        clean_handle = channel_input.lstrip("@").lower()
+        cached = cache_service.get_channel_by_handle(clean_handle)
+        if cached is None:
+            cached = cache_service.get_channel_by_handle(channel_input)
         if cached is not None:
             logger.info("Cache hit for channel handle: %s", channel_input)
             channel_id = cached.get("channel_id", "")
@@ -419,28 +432,17 @@ class ExportPipeline:
                     job_id, ProgressStage.FETCH_PLAYLIST, JobStatus.COMPLETED,
                     detail=f"Playlist (cached): {playlist_id}",
                 )
-                started_at = self._job_manager.get_job(job_id).started_at
-                elapsed = time.time() - (started_at.timestamp() if started_at else time.time())
-                result = JobResult(
-                    success=True,
-                    job_id=job_id,
-                    channel_title=channel_title,
-                    channel_id=channel_id,
-                    total_videos=0,
-                    total_discovered=0,
-                    total_api_calls=0,
-                    file_size_bytes=0,
-                    elapsed_seconds=round(elapsed, 1),
-                    cache_hits=2,
-                    cache_misses=0,
-                )
-                self._job_manager.complete_job(job_id, result)
-                return True
+                return {
+                    "channel_id": channel_id,
+                    "channel_title": channel_title,
+                    "playlist_id": playlist_id,
+                    "cache_hits": 2,
+                }
         self._job_manager.update_stage(
             job_id, ProgressStage.CHECK_CACHE, JobStatus.COMPLETED,
             detail="Cache miss",
         )
-        return False
+        return None
 
     def _resolve_channel(self, job_id: str, channel_input: str, logger: Any) -> dict:
         from services.channel_resolver import ChannelResolver

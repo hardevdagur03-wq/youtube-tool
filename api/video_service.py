@@ -8,6 +8,7 @@ from typing import Any
 
 from googleapiclient.errors import HttpError
 
+import http.client
 from api.youtube_client import YouTubeClient, YouTubeAPIClientError, YouTubeAPISslError
 from utils.retry import retry
 
@@ -15,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 _SSL_RETRYABLE = (ssl.SSLError, ssl.SSLZeroReturnError, ssl.SSLEOFError,
-                  ConnectionError, OSError, socket.timeout)
+                  ConnectionError, OSError, socket.timeout,
+                  http.client.IncompleteRead)
 
 
 class VideoServiceError(Exception):

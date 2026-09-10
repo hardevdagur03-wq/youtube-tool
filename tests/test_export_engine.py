@@ -539,6 +539,26 @@ class TestExportPipeline:
         assert updated.result is not None
         assert updated.result.total_videos > 0
 
+    def test_pipeline_warm_cache_exports_videos(self, mock_services, tmp_path):
+        channel_service, video_service = mock_services
+        jm = JobManager()
+        pipeline = ExportPipeline(jm, channel_service, video_service)
+
+        req1 = ExportRequest(channel_input="@test")
+        job1 = jm.create_job(req1)
+        pipeline.run(job1.job_id, req1)
+        res1 = jm.get_job(job1.job_id).result
+        assert res1.total_videos > 0
+
+        # Run 2: Cache is now warm for @test
+        req2 = ExportRequest(channel_input="@test")
+        job2 = jm.create_job(req2)
+        pipeline.run(job2.job_id, req2)
+        res2 = jm.get_job(job2.job_id).result
+        assert res2 is not None
+        assert res2.total_videos > 0
+        assert res2.cache_hits >= 2
+
     def test_pipeline_cancellation(self, mock_services):
         channel_service, video_service = mock_services
         jm = JobManager()

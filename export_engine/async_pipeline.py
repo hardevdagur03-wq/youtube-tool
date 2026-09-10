@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import logging
 import time
 from pathlib import Path
 from typing import Any
+
+_RUNS_DIR = Path(__file__).resolve().parent.parent / "webapp" / "runs"
 
 from api.async_youtube_client import (
     AsyncYouTubeClient,
@@ -70,6 +73,7 @@ class AsyncExportPipeline:
         api_calls = 0
         records_written = 0
         cache_hits = 0
+        cache_misses = 0
         total_retries = 0
 
         progress: dict[str, Any] = {
@@ -160,60 +164,82 @@ class AsyncExportPipeline:
             stage = ProgressStage.CHECK_CACHE
             await _set_stage(stage, "running", "Checking cache...")
             channel_input_lower = request.channel_input.strip().lower()
-            cached_channel = await asyncio.to_thread(cache_service.get_channel_by_handle, channel_input_lower)
+            handle = validation.get("identifier", request.channel_input)
+            clean_handle = handle.lstrip("@").lower()
+
+            cached_channel = None
+            if handle.startswith("UC") and len(handle) >= 24:
+                cached_channel = await asyncio.to_thread(cache_service.get_channel_by_id, handle)
+            if cached_channel is None:
+                cached_channel = await asyncio.to_thread(cache_service.get_channel_by_handle, clean_handle)
+            if cached_channel is None:
+                cached_channel = await asyncio.to_thread(cache_service.get_channel_by_handle, channel_input_lower)
+
+            channel_id = ""
+            channel_title = ""
+            playlist_id = ""
+
             if cached_channel is not None:
                 channel_id = cached_channel.get("channel_id", "")
                 channel_title = cached_channel.get("title", "Unknown")
+                cache_hits += 1
                 cached_playlist = await asyncio.to_thread(cache_service.get_playlist_id, channel_id)
                 if cached_playlist:
-                    elapsed = time.monotonic() - start_time
-                    result = JobResult(
-                        success=True, job_id=job_id,
-                        channel_title=channel_title, channel_id=channel_id,
-                        elapsed_seconds=round(elapsed, 1),
-                        cache_hits=2, cache_misses=0,
-                    )
-                    await _publish_result(result)
-                    progress["status"] = "completed"
-                    await _set_stage(ProgressStage.COMPLETE, "completed", "Cached result returned")
-                    return
-            await _set_stage(stage, "completed", "Cache miss")
+                    playlist_id = cached_playlist
+                    cache_hits += 1
+                await _set_stage(stage, "completed", f"Cache hit: {channel_title}")
+            else:
+                cache_misses += 1
+                await _set_stage(stage, "completed", "Cache miss")
 
             # Stage 3: Resolve channel
             stage = ProgressStage.RESOLVE_CHANNEL
-            await _set_stage(stage, "running", "Resolving channel...")
-            try:
-                handle = validation.get("identifier", request.channel_input)
-                if handle.startswith("UC") and len(handle) >= 24:
-                    channel_data = await self._client.get_channel_by_id(handle)
-                else:
-                    channel_data = await self._client.get_channel_by_handle(handle)
-            except AsyncYouTubeNotFoundError as exc:
-                raise PipelineError(f"Channel not found: {exc}", "channel_not_found")
-            except (AsyncYouTubeQuotaError, AsyncYouTubeTimeoutError, AsyncYouTubeClientError) as exc:
-                raise PipelineError(str(exc), "api_error")
+            if not channel_id:
+                await _set_stage(stage, "running", "Resolving channel...")
+                try:
+                    if handle.startswith("UC") and len(handle) >= 24:
+                        channel_data = await self._client.get_channel_by_id(handle)
+                    else:
+                        channel_data = await self._client.get_channel_by_handle(handle)
+                except AsyncYouTubeNotFoundError as exc:
+                    raise PipelineError(f"Channel not found: {exc}", "channel_not_found")
+                except (AsyncYouTubeQuotaError, AsyncYouTubeTimeoutError, AsyncYouTubeClientError) as exc:
+                    raise PipelineError(str(exc), "api_error")
 
-            channel_id = channel_data["id"]
-            channel_title = channel_data.get("snippet", {}).get("title", "Unknown")
-            api_calls += 1
-            await asyncio.to_thread(cache_service.set_channel_by_handle, channel_input_lower, {
-                "channel_id": channel_id, "title": channel_title,
-            })
-            await asyncio.to_thread(cache_service.set_channel_by_id, channel_id, {
-                "channel_id": channel_id, "title": channel_title,
-            })
-            await _set_stage(stage, "completed", f"Found: {channel_title}")
+                channel_id = channel_data["id"]
+                channel_title = channel_data.get("snippet", {}).get("title", "Unknown")
+                api_calls += 1
+                await asyncio.to_thread(cache_service.set_channel_by_handle, clean_handle, {
+                    "channel_id": channel_id, "title": channel_title,
+                })
+                await asyncio.to_thread(cache_service.set_channel_by_handle, channel_input_lower, {
+                    "channel_id": channel_id, "title": channel_title,
+                })
+                await asyncio.to_thread(cache_service.set_channel_by_id, channel_id, {
+                    "channel_id": channel_id, "title": channel_title,
+                })
+                await _set_stage(stage, "completed", f"Found: {channel_title}")
+            else:
+                await _set_stage(stage, "completed", f"Found (cached): {channel_title}")
 
             # Stage 4: Get upload playlist
             stage = ProgressStage.FETCH_PLAYLIST
-            await _set_stage(stage, "running", "Fetching upload playlist...")
-            try:
-                playlist_id = await self._client.get_uploads_playlist_id(channel_id)
-            except (AsyncYouTubeNotFoundError, AsyncYouTubeClientError) as exc:
-                raise PipelineError(str(exc), "playlist_error")
-            api_calls += 1
-            await asyncio.to_thread(cache_service.set_playlist_id, channel_id, playlist_id)
-            await _set_stage(stage, "completed", f"Playlist: {playlist_id}")
+            if not playlist_id:
+                await _set_stage(stage, "running", "Fetching upload playlist...")
+                try:
+                    playlist_id = await self._client.get_uploads_playlist_id(channel_id)
+                except (AsyncYouTubeNotFoundError, AsyncYouTubeClientError) as exc:
+                    raise PipelineError(str(exc), "playlist_error")
+                api_calls += 1
+                await asyncio.to_thread(cache_service.set_playlist_id, channel_id, playlist_id)
+                await _set_stage(stage, "completed", f"Playlist: {playlist_id}")
+            else:
+                await _set_stage(stage, "completed", f"Playlist (cached): {playlist_id}")
+
+            logger.info(
+                "[METADATA PIPELINE VERSION] CACHE-FIX-V2 | channel_id=%s | channel_title='%s' | uploads_playlist_id=%s | cache_hits=%d",
+                channel_id, channel_title, playlist_id, cache_hits,
+            )
 
             # Stage 5+6: Fetch video IDs + Fetch Metadata (fully overlapped)
             stage_ids = ProgressStage.FETCH_VIDEO_IDS
@@ -265,7 +291,8 @@ class AsyncExportPipeline:
                         items = await self._client.get_videos_batch(batch_ids)
                         api_calls += 1
                         return len(batch_ids), items
-                    except Exception:
+                    except Exception as exc:
+                        logger.error("Failed to fetch metadata batch of %d videos: %s", len(batch_ids), exc)
                         return len(batch_ids), []
 
             async def _consumer() -> None:
@@ -379,6 +406,12 @@ class AsyncExportPipeline:
 
             await _collect_results()
 
+            if total_videos > 0 and records_written == 0:
+                raise PipelineError(
+                    f"Discovered {total_videos} videos but failed to extract metadata records. Check YouTube API quota and network.",
+                    "metadata_fetch_failed",
+                )
+
             file_size = 0
             csv_path = Path(f"webapp/runs/{job_id}/videos.csv")
             if csv_path.exists():
@@ -405,8 +438,8 @@ class AsyncExportPipeline:
             metrics.record_export_complete(elapsed, records_written, file_size)
 
             logger.info(
-                "Async pipeline complete: channel=%s, exported=%d, api_calls=%d, elapsed=%.1fs",
-                channel_id, records_written, api_calls, elapsed,
+                "Async pipeline complete: channel_id=%s, uploads_playlist_id=%s, discovered_video_count=%d, exported_video_count=%d, api_calls=%d, cache_hits=%d, elapsed=%.1fs",
+                channel_id, playlist_id, total_videos, records_written, api_calls, cache_hits, elapsed,
             )
 
         except PipelineError as exc:

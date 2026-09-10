@@ -508,8 +508,7 @@ class TranscriptService:
                 transcript.plain_text = english_converter.convert(transcript.plain_text, title=video_title, channel=channel_title)
             if transcript.paragraph_text:
                 transcript.paragraph_text = self._text_cleaner.build_paragraphs(transcript.segments) if transcript.segments else english_converter.convert(transcript.paragraph_text, title=video_title, channel=channel_title)
-            if transcript.source == TranscriptSource.WHISPER or not hinglish_normalizer.is_hinglish_or_hindi(transcript.plain_text or ""):
-                transcript.language = "English (India)"
+            transcript.language = "English (India)"
             transcript.word_count = len(transcript.plain_text.split()) if transcript.plain_text else 0
             transcript.character_count = len(transcript.plain_text) if transcript.plain_text else 0
             transcript.estimated_read_time = estimate_read_time(transcript.word_count)
