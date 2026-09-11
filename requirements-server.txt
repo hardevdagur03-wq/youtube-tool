@@ -3,7 +3,7 @@
 
 # Core
 python-dotenv>=1.0.1
-pydantic-settings>=2.0.0
+pydantic-settings>=2.15.0
 
 # FastAPI / ASGI
 fastapi>=0.100.0
