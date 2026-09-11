@@ -9,7 +9,7 @@ pydantic-settings>=2.0.0
 
 # FastAPI / ASGI Web Server
 fastapi>=0.100.0
-uvicorn[standard]>=0.20.0
+uvicorn[standard]>=0.52.4
 python-multipart>=0.0.18
 
 # YouTube Data API v3
